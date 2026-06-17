@@ -8,7 +8,7 @@ memory_settings:
   overlap_count: 1            # 窗口滑动保留条数（例如满50条时，保留最后10条到下一轮，防止对话断层）
   
   # --- 概率控制（0.0 ~ 1.0） ---
-  base_interject_probability: 0.50   # 小事随缘的插话概率 (15%)
+  base_interject_probability: 1.0   # 小事随缘的插话概率 (15%)
   boost_interject_probability: 1.0  # 命中了技能设定(兴趣)时的强化插话概率 (60%)
   
   # --- 记忆边界控制 ---
