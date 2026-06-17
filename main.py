@@ -5,13 +5,14 @@ import os
 import re
 import yaml
 from datetime import datetime, timedelta
-from loguru import logger
+
+# 【修复 1】导入 AstrBot 框架原生魔改过的 logger，解决 Web 面板不显示日志的问题
+from astrbot.api import logger
 
 # AstrBot V4 SDK 导入核心库
 from astrbot.api.star import Context, Star, register
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.event.filter import EventMessageType
-from astrbot.api.provider import ProviderRequest
 
 # 导入数据库管理器
 from .db_manager import MemoryDBManager 
@@ -20,9 +21,6 @@ from .db_manager import MemoryDBManager
 class AgenticMemoryPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
-        
-        # 【修复日志报错】绑定专属 plugin_tag，这样日志就能正常显示在 Web 面板了！
-        self.logger = logger.bind(plugin_tag="agentic_memory")
         
         # 1. 初始化滑动窗口缓冲池
         self.message_buffers = {}
@@ -62,7 +60,7 @@ class AgenticMemoryPlugin(Star):
         if os.path.exists(full_path):
             with open(full_path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
-        self.logger.error(f"严重错误: 配置文件 {filepath} 缺失！")
+        logger.error(f"严重错误: 配置文件 {filepath} 缺失！")
         return {"memory_settings": {}, "skill_settings": {}}
 
     def _load_skill(self, filepath: str) -> str:
@@ -72,7 +70,7 @@ class AgenticMemoryPlugin(Star):
         if os.path.exists(full_path):
             with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        self.logger.warning(f"Skill 文件未找到: {full_path}")
+        logger.warning(f"Skill 文件未找到: {full_path}")
         return "你是一个普通的群友。"
 
     # ==========================================
@@ -145,7 +143,7 @@ class AgenticMemoryPlugin(Star):
                 fixed = user_data["fixed_data"]
                 fixed.update(updates) 
                 self.db.upsert_user_profile(group_id, user_name, fixed, user_data["dynamic_events"])
-                self.logger.info(f"更新了群友 {user_name} 的固定档案。")
+                logger.info(f"更新了群友 {user_name} 的固定档案。")
 
             should_speak = False
 
@@ -158,7 +156,7 @@ class AgenticMemoryPlugin(Star):
                     events.append(event_desc)
                     
                     if len(events) > self.max_events:
-                        self.logger.info(f"群友 {user_name} 动态事件超载，执行滚动合并...")
+                        logger.info(f"群友 {user_name} 动态事件超载，执行滚动合并...")
                         oldest_1 = events.pop(0)
                         oldest_2 = events.pop(0)
                         merged_event = await self._merge_old_events(oldest_1, oldest_2)
@@ -167,14 +165,14 @@ class AgenticMemoryPlugin(Star):
                     self.db.upsert_user_profile(group_id, user_name, fixed, events)
                 
                 should_speak = True
-                self.logger.success(f"检测到大事。档案已更新，强制触发发言。")
+                logger.success(f"检测到大事。档案已更新，强制触发发言。")
 
             else:
                 current_prob = self.boost_prob if matches_preference else self.base_prob
                 if random.random() < current_prob:
                     should_speak = True
                     log_msg = "命中兴趣偏好" if matches_preference else "小事随缘命中"
-                    self.logger.info(f"{log_msg} ({current_prob*100}%)，准备搭茬。")
+                    logger.info(f"{log_msg} ({current_prob*100}%)，准备搭茬。")
 
             if should_speak and interject_topic:
                 reply_text = await self._generate_reply(interject_topic, chat_batch[-15:], group_id)
@@ -182,7 +180,7 @@ class AgenticMemoryPlugin(Star):
                     await event.send(event.plain_result(reply_text))
 
         except Exception as e:
-            self.logger.error(f"后台记忆处理任务崩溃: {e}")
+            logger.error(f"后台记忆处理任务崩溃: {e}")
 
     # ==========================================
     #         底层 LLM 接口：分析与压缩
@@ -218,16 +216,18 @@ class AgenticMemoryPlugin(Star):
             provider = self.context.get_using_provider()
             if not provider: return {}
             
-            # 【修复 LLM 请求报错】使用 V4 标准的 contexts 字典列表传递用户消息
-            req = ProviderRequest(system_prompt=system_prompt)
-            req.contexts = [{"role": "user", "content": user_prompt}]
-            res = await provider.text_chat(req)
+            # 【修复 2】V4 标准文本请求法，并传入 context=[] 切断冗余的历史记忆干扰
+            res = await provider.text_chat(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                context=[] 
+            )
             
             raw_text = getattr(res, 'completion_text', getattr(res, 'text', ''))
             clean_text = raw_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
-            self.logger.error(f"分析请求失败: {e}")
+            logger.error(f"分析请求失败: {e}")
             return {}
 
     async def _merge_old_events(self, event1: str, event2: str) -> str:
@@ -237,9 +237,11 @@ class AgenticMemoryPlugin(Star):
 直接输出合并后的句子，不要任何多余文字。"""
         try:
             provider = self.context.get_using_provider()
-            req = ProviderRequest(system_prompt="你是一个专门负责缩写句子的 AI 助手。")
-            req.contexts = [{"role": "user", "content": prompt}]
-            res = await provider.text_chat(req)
+            res = await provider.text_chat(
+                prompt=prompt,
+                system_prompt="你是一个专门负责缩写句子的 AI 助手。",
+                context=[]
+            )
             return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except:
             return f"{event1} 且 {event2}" 
@@ -278,12 +280,14 @@ class AgenticMemoryPlugin(Star):
 
         try:
             provider = self.context.get_using_provider()
-            req = ProviderRequest(system_prompt=self.skill_content)
-            req.contexts = [{"role": "user", "content": user_prompt}]
-            res = await provider.text_chat(req)
+            res = await provider.text_chat(
+                prompt=user_prompt,
+                system_prompt=self.skill_content,
+                context=[]
+            )
             return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except Exception as e:
-            self.logger.error(f"回复生成失败: {e}")
+            logger.error(f"回复生成失败: {e}")
             return ""
 
     # ==========================================
@@ -298,10 +302,10 @@ class AgenticMemoryPlugin(Star):
                 target += timedelta(days=1)
             wait_seconds = (target - now).total_seconds()
             
-            self.logger.info(f"记忆压缩任务挂起，将在 {wait_seconds/3600:.2f} 小时后（凌晨4点）执行...")
+            logger.info(f"记忆压缩任务挂起，将在 {wait_seconds/3600:.2f} 小时后（凌晨4点）执行...")
             await asyncio.sleep(wait_seconds)
             
-            self.logger.info("凌晨 4 点到达，开始执行全局记忆压缩任务！")
+            logger.info("凌晨 4 点到达，开始执行全局记忆压缩任务！")
             try:
                 with self.db._get_conn() as conn:
                     cursor = conn.cursor()
@@ -319,14 +323,14 @@ class AgenticMemoryPlugin(Star):
                         await self._compress_history_memory(group_id, one_year_ago)
 
             except Exception as e:
-                self.logger.error(f"凌晨压缩任务异常: {e}")
+                logger.error(f"凌晨压缩任务异常: {e}")
 
     async def _compress_daily_memory(self, group_id: str, cutoff_time: str):
         paragraphs = self.db.get_summaries(group_id, "paragraph", before_time=cutoff_time)
         if not paragraphs: return
 
         texts_to_compress = [p[1] for p in paragraphs]
-        self.logger.info(f"群 {group_id} 共有 {len(texts_to_compress)} 条段落待压缩...")
+        logger.info(f"群 {group_id} 共有 {len(texts_to_compress)} 条段落待压缩...")
 
         chunk_size = 10 
         chunks = [texts_to_compress[i:i + chunk_size] for i in range(0, len(texts_to_compress), chunk_size)]
@@ -346,7 +350,7 @@ class AgenticMemoryPlugin(Star):
             if daily_summary:
                 self.db.add_summary(group_id, "daily", daily_summary)
                 self.db.delete_summaries(group_id, "paragraph", before_time=cutoff_time)
-                self.logger.success(f"群 {group_id} 的昨日记忆已折叠并清理完毕。")
+                logger.success(f"群 {group_id} 的昨日记忆已折叠并清理完毕。")
 
     async def _compress_history_memory(self, group_id: str, cutoff_time: str):
         dailies = self.db.get_summaries(group_id, "daily", before_time=cutoff_time)
@@ -361,15 +365,17 @@ class AgenticMemoryPlugin(Star):
         if history_summary:
             self.db.add_summary(group_id, "history", history_summary)
             self.db.delete_summaries(group_id, "daily", before_time=cutoff_time)
-            self.logger.success(f"群 {group_id} 的年度老旧记忆已封存。")
+            logger.success(f"群 {group_id} 的年度老旧记忆已封存。")
 
     async def _call_llm_simple(self, prompt: str) -> str:
         try:
             provider = self.context.get_using_provider()
-            req = ProviderRequest(system_prompt="你是一个擅长文本压缩的 AI。")
-            req.contexts = [{"role": "user", "content": prompt}]
-            res = await provider.text_chat(req)
+            res = await provider.text_chat(
+                prompt=prompt,
+                system_prompt="你是一个擅长文本压缩的 AI。",
+                context=[]
+            )
             return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except Exception as e:
-            self.logger.error(f"文本压缩请求失败: {e}")
+            logger.error(f"文本压缩请求失败: {e}")
             return ""
