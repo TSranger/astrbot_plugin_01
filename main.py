@@ -24,6 +24,8 @@ class AgenticMemoryPlugin(Star):
         
         # 1. 初始化滑动窗口缓冲池
         self.message_buffers = {}
+        # 用于记录每个群上次触发后保留的消息数（用于精确控制触发阈值）
+        self.last_overlap_counts = {}
         
         # 2. 加载外部配置
         self.config = self._load_config("config.yaml")
@@ -100,6 +102,7 @@ class AgenticMemoryPlugin(Star):
             reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
             if reply_text:
                 await event.send(event.plain_result(reply_text))
+                logger.info(f"[被@触发] 机器人回复 {group_id} 群聊：{reply_text}")
             return 
 
         # 日常潜水收集消息
@@ -112,9 +115,16 @@ class AgenticMemoryPlugin(Star):
         })
 
         # 滑动窗口判定触发
-        if len(self.message_buffers[group_id]) >= self.threshold:
+        # 【修复3】计算当前需要的有效消息数：threshold + 上次保留的overlap数
+        last_overlap = self.last_overlap_counts.get(group_id, 0)
+        effective_threshold = self.threshold + last_overlap
+        
+        if len(self.message_buffers[group_id]) >= effective_threshold:
             chat_batch = self.message_buffers[group_id].copy()
-            self.message_buffers[group_id] = self.message_buffers[group_id][-self.overlap:] if self.overlap > 0 else []
+            # 保留 overlap 条消息到下一轮
+            kept_count = min(self.overlap, len(chat_batch)) if self.overlap > 0 else 0
+            self.message_buffers[group_id] = chat_batch[-kept_count:] if kept_count > 0 else []
+            self.last_overlap_counts[group_id] = kept_count
             asyncio.create_task(self._process_memory_task(group_id, chat_batch, event))
 
     # ==========================================
@@ -140,10 +150,23 @@ class AgenticMemoryPlugin(Star):
             for user_name, updates in profile_updates.items():
                 if not isinstance(updates, dict) or not updates: continue
                 user_data = self.db.get_user_profile(group_id, user_name)
+                old_fixed = user_data["fixed_data"].copy()
                 fixed = user_data["fixed_data"]
                 fixed.update(updates) 
                 self.db.upsert_user_profile(group_id, user_name, fixed, user_data["dynamic_events"])
-                logger.info(f"更新了群友 {user_name} 的固定档案。")
+                
+                # 【修复4】详细记录档案更新内容
+                added_keys = set(updates.keys()) - set(old_fixed.keys())
+                changed_keys = {k for k in updates if k in old_fixed and old_fixed[k] != updates[k]}
+                if added_keys:
+                    logger.info(f"更新群友 [{user_name}] 档案：新增属性 {added_keys}")
+                if changed_keys:
+                    logger.info(f"更新群友 [{user_name}] 档案：修改属性 {changed_keys}")
+                for key, value in updates.items():
+                    if key in old_fixed:
+                        logger.debug(f"  - {key}: '{old_fixed[key]}' -> '{value}'")
+                    else:
+                        logger.debug(f"  + {key}: '{value}'")
 
             should_speak = False
 
@@ -178,6 +201,11 @@ class AgenticMemoryPlugin(Star):
                 reply_text = await self._generate_reply(interject_topic, chat_batch[-15:], group_id)
                 if reply_text:
                     await event.send(event.plain_result(reply_text))
+                    logger.info(f"[主动接话] 机器人回复 {group_id} 群聊：{reply_text}")
+                else:
+                    logger.warning(f"[主动接话] 命中触发条件但生成回复为空，interject_topic='{interject_topic}'")
+            elif should_speak and not interject_topic:
+                logger.warning(f"[主动接话] 命中触发条件但无话题切入点 (should_speak=True, interject_topic为空)")
 
         except Exception as e:
             logger.error(f"后台记忆处理任务崩溃: {e}")
@@ -251,6 +279,9 @@ class AgenticMemoryPlugin(Star):
     # ==========================================
 
     async def _generate_reply(self, topic: str, recent_context: list, group_id: str) -> str:
+        # 【修复5】增加调试日志
+        logger.debug(f"[回复生成] 开始为群 {group_id} 生成回复，话题: {topic}")
+        
         recent_summaries_db = self.db.get_summaries(group_id, "paragraph")
         recent_summaries = [row[1] for row in recent_summaries_db[-3:]] 
         background_str = "【群聊近期背景回顾】：\n- " + "\n- ".join(recent_summaries) if recent_summaries else "暂无背景。"
@@ -275,19 +306,32 @@ class AgenticMemoryPlugin(Star):
 {context_str}
 
 【你的任务】：
-大家正在聊或触发话题：“{topic}”。请结合上述档案和背景，严格遵循你的系统人设插一句话。
-要求：口语化、简短，若提及往事且不在档案内，请表现出“忘记了”或“不知道”。直接输出回复内容。"""
+大家正在聊或触发话题："{topic}”。请结合上述档案和背景，严格遵循你的系统人设插一句话。
+要求：口语化、简短，若提及往事且不在档案内，请表现出"忘记了"或"不知道"。直接输出回复内容。"""
 
         try:
             provider = self.context.get_using_provider()
+            if not provider:
+                logger.error(f"[回复生成] 未找到 LLM 提供者！")
+                return ""
+            
+            logger.debug(f"[回复生成] 正在调用 LLM...")
             res = await provider.text_chat(
                 prompt=user_prompt,
                 system_prompt=self.skill_content,
                 context=[]
             )
-            return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
+            
+            reply_text = getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
+            
+            if not reply_text:
+                logger.warning(f"[回复生成] LLM 返回空响应！raw response: {res}")
+            else:
+                logger.debug(f"[回复生成] LLM 返回: {reply_text[:100]}...")
+            
+            return reply_text
         except Exception as e:
-            logger.error(f"回复生成失败: {e}")
+            logger.error(f"[回复生成] 异常: {type(e).__name__}: {e}")
             return ""
 
     # ==========================================
