@@ -14,12 +14,12 @@ from astrbot.api.event.filter import EventMessageType
 from astrbot.api.provider import ProviderRequest
 
 # 导入我们刚刚写的数据库管理器
-from .db_manager import MemoryDBManager 
+from .db_manager import MemoryDBManager
 
 @register("agentic_memory", "YourName", "2.0", "具备长期折叠记忆与主动行为的群聊智能体")
 class AgenticMemoryPlugin(Star):
     # V4 中继承自 Star，且 __init__ 需要接收 context 和 config
-    def __init__(self, context: Context, config: dict):
+    def __init__(self, context: Context):
         super().__init__(context)
         # 1. 初始化滑动窗口缓冲池
         self.message_buffers = {}
