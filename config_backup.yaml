@@ -1,0 +1,26 @@
+# ==========================================
+# 智能体记忆插件全局配置文件 (config.yaml)
+# ==========================================
+
+memory_settings:
+  # --- 滑动窗口与频率控制 ---
+  buffer_threshold: 50         # 满多少条消息触发一次大模型后台总结
+  overlap_count: 10            # 窗口滑动保留条数（例如满50条时，保留最后10条到下一轮，防止对话断层）
+  
+  # --- 概率控制（0.0 ~ 1.0） ---
+  base_interject_probability: 0.15   # 小事随缘的插话概率 (15%)
+  boost_interject_probability: 0.60  # 命中了技能设定(兴趣)时的强化插话概率 (60%)
+  
+  # --- 记忆边界控制 ---
+  max_dynamic_events: 10       # 每个群友最多保留的动态事件条数（超过则触发滚动压缩）
+  
+  # --- 存储路径 ---
+  memory_db_path: "data/agentic_memory.db" # SQLite 数据库的本地存放路径
+
+skill_settings:
+  # --- 身份与唤醒 ---
+  active_skill_file: "skills/漫游时空.skill/漫游时空.md"  # 当前挂载的系统提示词(人设)文件
+  bot_names:                   # 机器人的名字列表，群友提到这些词会强制触发回复
+    - "漫游时空"
+    - "漫游派蒙"
+    # - "派蒙"
