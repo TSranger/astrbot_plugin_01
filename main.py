@@ -97,12 +97,16 @@ class AgenticMemoryPlugin(Star):
             is_mentioned = True
         
         if is_mentioned:
+            logger.debug(f"[被@触发] 检测到 @ 或提及，sender={sender_name}, message={message_text}")
             recent_msgs = self.message_buffers.get(group_id, [])[-15:]
             recent_msgs.append({"sender": sender_name, "msg": message_text})
             reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
             if reply_text:
                 await event.send(event.plain_result(reply_text))
                 logger.info(f"[被@触发] 机器人回复 {group_id} 群聊：{reply_text}")
+            # 尝试阻止事件传播，防止框架默认处理
+            if hasattr(event, 'stop_propagation'):
+                event.stop_propagation()
             return 
 
         # 日常潜水收集消息
@@ -236,7 +240,7 @@ class AgenticMemoryPlugin(Star):
             "群友昵称": "重大事件描述" 
         }}
     }},
-    "interject_topic": "提取一个简短的话题切入点供机器人插话，无则留空"
+    "interject_topic": "必须提取一个简短的话题切入点供机器人插话。如果没有合适的话题，可以留空字符串''。注意：即使话题很普通，也要尽量提取一个切入点，不要总是留空。"
 }}"""
         user_prompt = f"【群聊记录】：\n{chat_text}"
         
