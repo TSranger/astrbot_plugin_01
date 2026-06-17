@@ -7,18 +7,20 @@ import yaml
 from datetime import datetime, timedelta
 from loguru import logger
 
-# AstrBot SDK 导入
-from astrbot.api.plugin import Plugin, register
-from astrbot.api.event import GroupMessageEvent
-from astrbot.api.provider import LLMRequest, SystemMessage, UserMessage
+# AstrBot V4 SDK 导入核心库
+from astrbot.api.star import Context, Star, register
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event.filter import EventMessageType
+from astrbot.api.provider import ProviderRequest
 
 # 导入我们刚刚写的数据库管理器
 from .db_manager import MemoryDBManager 
 
 @register("agentic_memory", "YourName", "2.0", "具备长期折叠记忆与主动行为的群聊智能体")
-class AgenticMemoryPlugin(Plugin):
-    def __init__(self):
-        super().__init__()
+class AgenticMemoryPlugin(Star):
+    # V4 中继承自 Star，且 __init__ 需要接收 context 和 config
+    def __init__(self, context: Context, config: dict):
+        super().__init__(context)
         # 1. 初始化滑动窗口缓冲池
         self.message_buffers = {}
         
@@ -74,16 +76,25 @@ class AgenticMemoryPlugin(Plugin):
     #         事件监听与滑动窗口 (实时接水管)
     # ==========================================
 
-    async def on_group_message(self, event: GroupMessageEvent):
-        group_id = str(event.group_id)
-        sender_name = event.sender.nickname
-        message_text = event.message.text.strip()
+    # V4 拦截群聊消息的专用装饰器
+    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
+    async def on_group_message(self, event: AstrMessageEvent):
+        # V4 获取群号的兼容写法
+        group_id = str(getattr(event.message_obj, 'group_id', event.session_id))
+        sender_name = event.get_sender_name()
+        message_text = event.message_str.strip()
         
         if not message_text: return
 
         # 1. 拦截 @机器人 或 提及名字的消息，直接触发回复（无视滑动窗口）
         bot_names = self.config.get('skill_settings', {}).get('bot_names', [])
-        is_mentioned = event.is_at or any(name in message_text for name in bot_names)
+        is_mentioned = False
+        
+        # 兼容检测@或者关键词
+        if hasattr(event, 'is_at') and getattr(event, 'is_at'):
+            is_mentioned = True
+        elif any(name in message_text for name in bot_names):
+            is_mentioned = True
         
         if is_mentioned:
             # 被提及，立刻收集上下文（最多最后15条）和最近的段落总结进行回复
@@ -92,7 +103,8 @@ class AgenticMemoryPlugin(Plugin):
             # 唤醒“沉浸式群聊成员”进行对话
             reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
             if reply_text:
-                await event.send(reply_text)
+                # V4 发信标准 API
+                await event.send(event.plain_result(reply_text))
             return # 被 @ 处理完后，这条消息不再计入日常总结缓冲，防止重复触发
 
         # 2. 日常潜水收集消息
@@ -119,7 +131,7 @@ class AgenticMemoryPlugin(Plugin):
     #         核心大脑：记忆提纯与决策树
     # ==========================================
 
-    async def _process_memory_task(self, group_id: str, chat_batch: list, event: GroupMessageEvent):
+    async def _process_memory_task(self, group_id: str, chat_batch: list, event: AstrMessageEvent):
         """后台任务：总结、更新档案、决定是否插话"""
         try:
             chat_text = "\n".join([f"{item['sender']}: {item['msg']}" for item in chat_batch])
@@ -191,7 +203,7 @@ class AgenticMemoryPlugin(Plugin):
             if should_speak and interject_topic:
                 reply_text = await self._generate_reply(interject_topic, chat_batch[-15:], group_id)
                 if reply_text:
-                    await event.send(reply_text)
+                    await event.send(event.plain_result(reply_text))
 
         except Exception as e:
             logger.error(f"后台记忆处理任务崩溃: {e}")
@@ -227,11 +239,17 @@ class AgenticMemoryPlugin(Plugin):
         user_prompt = f"【群聊记录】：\n{chat_text}"
         
         try:
-            provider = self.context.get_llm_provider()
+            # V4 获取大模型 Provider 的标准方法
+            provider = self.context.get_using_provider()
             if not provider: return {}
-            req = LLMRequest(messages=[SystemMessage(content=system_prompt), UserMessage(content=user_prompt)])
-            res = await provider.chat(req)
-            clean_text = res.text.replace("```json", "").replace("```", "").strip()
+            
+            # V4 的 ProviderRequest 对象
+            req = ProviderRequest(system_prompt=system_prompt, text=user_prompt)
+            res = await provider.text_chat(req)
+            
+            # 兼容获取 V4 的返回文本
+            raw_text = getattr(res, 'completion_text', getattr(res, 'text', ''))
+            clean_text = raw_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
             logger.error(f"分析请求失败: {e}")
@@ -244,10 +262,10 @@ class AgenticMemoryPlugin(Plugin):
 事件2：{event2}
 直接输出合并后的句子，不要任何多余文字。"""
         try:
-            provider = self.context.get_llm_provider()
-            req = LLMRequest(messages=[UserMessage(content=prompt)])
-            res = await provider.chat(req)
-            return res.text.strip()
+            provider = self.context.get_using_provider()
+            req = ProviderRequest(text=prompt)
+            res = await provider.text_chat(req)
+            return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except:
             return f"{event1} 且 {event2}" # 失败时的 fallback
 
@@ -288,45 +306,16 @@ class AgenticMemoryPlugin(Plugin):
 要求：口语化、简短，若提及往事且不在档案内，请表现出“忘记了”或“不知道”。直接输出回复内容。"""
 
         try:
-            provider = self.context.get_llm_provider()
-            req = LLMRequest(messages=[
-                SystemMessage(content=self.skill_content),
-                UserMessage(content=user_prompt)
-            ])
-            res = await provider.chat(req)
-            return res.text.strip()
+            provider = self.context.get_using_provider()
+            req = ProviderRequest(
+                system_prompt=self.skill_content,
+                text=user_prompt
+            )
+            res = await provider.text_chat(req)
+            return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except Exception as e:
             logger.error(f"回复生成失败: {e}")
             return ""
-
-    # ==========================================
-    #         定时任务 (凌晨4点 Map-Reduce 压缩)
-    # ==========================================
-
-    async def _cron_daily_compression(self):
-        """死循环任务，每天凌晨 4 点触发记忆折叠"""
-        while True:
-            now = datetime.now()
-            # 计算距离下一个凌晨 4 点还有多久
-            target = now.replace(hour=4, minute=0, second=0, microsecond=0)
-            if now >= target:
-                target += timedelta(days=1)
-            wait_seconds = (target - now).total_seconds()
-            
-            logger.info(f"记忆压缩任务挂起，将在 {wait_seconds/3600:.2f} 小时后（凌晨4点）执行...")
-            await asyncio.sleep(wait_seconds)
-            
-            # --- 凌晨 4 点到达，开始执行折叠 ---
-            logger.info("凌晨 4 点到达，开始执行全局记忆压缩任务！")
-            try:
-                # 为了简便，这里伪代码展示流程（实际需要查出所有有数据的 group_id 进行遍历）
-                # 假设我们有一个函数获取所有活跃的群组：
-                # active_groups = self.db.get_all_active_groups()
-                # for group_id in active_groups:
-                #     await self._compress_group_memory(group_id)
-                pass
-            except Exception as e:
-                logger.error(f"凌晨压缩任务异常: {e}")
 
     # ==========================================
     #         定时任务 (凌晨4点记忆折叠)
@@ -421,10 +410,10 @@ class AgenticMemoryPlugin(Plugin):
     async def _call_llm_simple(self, prompt: str) -> str:
         """纯文本大模型调用封装（专门用于文本压缩，不需要 JSON）"""
         try:
-            provider = self.context.get_llm_provider()
-            req = LLMRequest(messages=[UserMessage(content=prompt)])
-            res = await provider.chat(req)
-            return res.text.strip()
+            provider = self.context.get_using_provider()
+            req = ProviderRequest(text=prompt)
+            res = await provider.text_chat(req)
+            return getattr(res, 'completion_text', getattr(res, 'text', '')).strip()
         except Exception as e:
             logger.error(f"文本压缩请求失败: {e}")
             return ""
