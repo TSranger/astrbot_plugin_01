@@ -99,6 +99,10 @@ class AgenticMemoryPlugin(Star):
             0,
             int(self.proactive_talk_settings.get("cooldown_seconds", 0)),
         )
+        self.scheduled_proactive_failure_retry_seconds = max(
+            30,
+            int(self.proactive_talk_settings.get("failure_retry_seconds", 1800)),
+        )
         self.short_window_enabled = bool(
             self.reaction_settings.get("short_window_enabled", True),
         )
@@ -1182,7 +1186,8 @@ class AgenticMemoryPlugin(Star):
         """Normalize scheduled proactive talk tasks from config.
 
         Returns:
-            Enabled task definitions with validated ids, times, and messages.
+            Enabled task definitions with validated ids, times, parsed clock parts,
+            and messages.
         """
         if not self.proactive_talk_settings.get("enabled", False):
             return []
@@ -1267,11 +1272,27 @@ class AgenticMemoryPlugin(Star):
                 )
                 continue
 
+            fixed_hour = None
+            fixed_minute = None
+            range_start_hour = None
+            range_start_minute = None
+            range_end_hour = None
+            range_end_minute = None
+
             if fixed_time:
                 if not re.fullmatch(r"\d{2}:\d{2}", fixed_time):
                     self._log(
                         "warning",
                         "[agentic_memory] Skip proactive task with invalid fixed time. "
+                        f"task_id={task_id}, time={fixed_time}",
+                    )
+                    continue
+
+                fixed_hour, fixed_minute = [int(part) for part in fixed_time.split(":")]
+                if not (0 <= fixed_hour <= 23 and 0 <= fixed_minute <= 59):
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip proactive task with out-of-range fixed time. "
                         f"task_id={task_id}, time={fixed_time}",
                     )
                     continue
@@ -1287,11 +1308,29 @@ class AgenticMemoryPlugin(Star):
                     )
                     continue
 
-                start_hour, start_minute = [
+                range_start_hour, range_start_minute = [
                     int(part) for part in range_start.split(":")
                 ]
-                end_hour, end_minute = [int(part) for part in range_end.split(":")]
-                if (end_hour, end_minute) < (start_hour, start_minute):
+                range_end_hour, range_end_minute = [
+                    int(part) for part in range_end.split(":")
+                ]
+                if not (
+                    0 <= range_start_hour <= 23
+                    and 0 <= range_start_minute <= 59
+                    and 0 <= range_end_hour <= 23
+                    and 0 <= range_end_minute <= 59
+                ):
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip proactive task with out-of-range time window. "
+                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                    )
+                    continue
+
+                if (range_end_hour, range_end_minute) < (
+                    range_start_hour,
+                    range_start_minute,
+                ):
                     self._log(
                         "warning",
                         "[agentic_memory] Skip proactive task whose range end is earlier than start. "
@@ -1305,6 +1344,12 @@ class AgenticMemoryPlugin(Star):
                     "time": fixed_time,
                     "time_range_start": range_start,
                     "time_range_end": range_end,
+                    "fixed_hour": fixed_hour,
+                    "fixed_minute": fixed_minute,
+                    "range_start_hour": range_start_hour,
+                    "range_start_minute": range_start_minute,
+                    "range_end_hour": range_end_hour,
+                    "range_end_minute": range_end_minute,
                     "messages": messages,
                     "group_ids": group_ids,
                     "cooldown_seconds": task_cooldown_seconds,
@@ -1314,43 +1359,50 @@ class AgenticMemoryPlugin(Star):
         return normalized_tasks
 
     def _pick_proactive_task_time(
-        self, task: dict[str, Any], today: datetime
+        self,
+        task: dict[str, Any],
+        target_day: datetime,
+        earliest_time: datetime | None = None,
     ) -> datetime:
-        """Pick today's execution time for one proactive task.
+        """Pick one execution time for a proactive task on a specific date.
 
         Args:
             task: Normalized proactive task config.
-            today: Current datetime used for building today's target.
+            target_day: Datetime whose date is used for the target run day.
+            earliest_time: Optional lower bound for random window scheduling.
 
         Returns:
-            Today's target execution datetime.
+            Target execution datetime on the requested day.
         """
-        fixed_time = str(task.get("time", "")).strip()
-        if fixed_time:
-            hour, minute = fixed_time.split(":")
-            return today.replace(
-                hour=int(hour),
-                minute=int(minute),
+        fixed_hour = task.get("fixed_hour")
+        fixed_minute = task.get("fixed_minute")
+        if fixed_hour is not None and fixed_minute is not None:
+            return target_day.replace(
+                hour=int(fixed_hour),
+                minute=int(fixed_minute),
                 second=0,
                 microsecond=0,
             )
 
-        range_start = str(task.get("time_range_start", "")).strip()
-        range_end = str(task.get("time_range_end", "")).strip()
-        start_hour, start_minute = range_start.split(":")
-        end_hour, end_minute = range_end.split(":")
-        start_dt = today.replace(
-            hour=int(start_hour),
-            minute=int(start_minute),
+        start_dt = target_day.replace(
+            hour=int(task["range_start_hour"]),
+            minute=int(task["range_start_minute"]),
             second=0,
             microsecond=0,
         )
-        end_dt = today.replace(
-            hour=int(end_hour),
-            minute=int(end_minute),
+        end_dt = target_day.replace(
+            hour=int(task["range_end_hour"]),
+            minute=int(task["range_end_minute"]),
             second=0,
             microsecond=0,
         )
+        if earliest_time and earliest_time.date() == target_day.date():
+            earliest_candidate = (earliest_time + timedelta(minutes=1)).replace(
+                second=0,
+                microsecond=0,
+            )
+            start_dt = max(start_dt, earliest_candidate)
+
         random_seconds = random.randint(0, int((end_dt - start_dt).total_seconds()))
         return start_dt + timedelta(seconds=random_seconds)
 
@@ -1360,7 +1412,7 @@ class AgenticMemoryPlugin(Star):
         task: dict[str, Any],
         now: datetime,
     ) -> datetime:
-        """Get today's stable planned execution time for one task and group.
+        """Get the next stable planned execution time for one task and group.
 
         Args:
             group_id: Target group id.
@@ -1368,14 +1420,53 @@ class AgenticMemoryPlugin(Star):
             now: Current datetime.
 
         Returns:
-            Stable execution time for today.
+            Stable future execution time, or the already-planned overdue time when
+            the task is waiting for a retry on the same day.
         """
         task_id = str(task["task_id"])
         planned_time = self.proactive_task_planned_times[group_id].get(task_id)
-        if planned_time and planned_time.date() == now.date():
-            return planned_time
+        if planned_time:
+            if planned_time > now:
+                return planned_time
+            if planned_time.date() == now.date():
+                return planned_time
 
-        planned_time = self._pick_proactive_task_time(task, now)
+        fixed_hour = task.get("fixed_hour")
+        fixed_minute = task.get("fixed_minute")
+        if fixed_hour is not None and fixed_minute is not None:
+            planned_time = self._pick_proactive_task_time(task, now)
+            if planned_time <= now:
+                planned_time = self._pick_proactive_task_time(
+                    task,
+                    now + timedelta(days=1),
+                )
+        else:
+            today_start = now.replace(
+                hour=int(task["range_start_hour"]),
+                minute=int(task["range_start_minute"]),
+                second=0,
+                microsecond=0,
+            )
+            today_end = now.replace(
+                hour=int(task["range_end_hour"]),
+                minute=int(task["range_end_minute"]),
+                second=0,
+                microsecond=0,
+            )
+            if now < today_start:
+                planned_time = self._pick_proactive_task_time(task, now)
+            elif now < today_end:
+                planned_time = self._pick_proactive_task_time(
+                    task,
+                    now,
+                    earliest_time=now,
+                )
+            else:
+                planned_time = self._pick_proactive_task_time(
+                    task,
+                    now + timedelta(days=1),
+                )
+
         self.proactive_task_planned_times[group_id][task_id] = planned_time
         self._log(
             "info",
@@ -1385,22 +1476,20 @@ class AgenticMemoryPlugin(Star):
         return planned_time
 
     def _get_allowed_proactive_groups(self) -> list[str]:
-        """Get groups that scheduled proactive tasks may send to.
+        """Get the default groups that scheduled proactive tasks may send to.
 
         Returns:
-            Allowed group id list.
+            Default proactive target group id list from proactive config.
         """
-        whitelist = self.group_scope.get("group_whitelist", [])
         default_group_ids = self.proactive_talk_settings.get("default_group_ids", [])
         merged_groups: list[str] = []
+        if not isinstance(default_group_ids, list):
+            return merged_groups
 
-        for raw_value in (whitelist, default_group_ids):
-            if not isinstance(raw_value, list):
-                continue
-            for item in raw_value:
-                group_id = str(item).strip()
-                if group_id and group_id not in merged_groups:
-                    merged_groups.append(group_id)
+        for item in default_group_ids:
+            group_id = str(item).strip()
+            if group_id and group_id not in merged_groups:
+                merged_groups.append(group_id)
 
         return merged_groups
 
@@ -1409,7 +1498,7 @@ class AgenticMemoryPlugin(Star):
         group_id: str,
         reply_text: str,
         task_id: str,
-    ) -> bool:
+    ) -> str:
         """Send a scheduled proactive message to one group.
 
         Args:
@@ -1418,7 +1507,8 @@ class AgenticMemoryPlugin(Star):
             task_id: Proactive task identifier.
 
         Returns:
-            ``True`` when the message was sent successfully.
+            Status string: ``sent``, ``skipped``, ``retryable_failure``, or
+            ``fatal_failure``.
         """
         raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
@@ -1428,7 +1518,7 @@ class AgenticMemoryPlugin(Star):
                 "[agentic_memory] Scheduled proactive reply is empty after sanitize. "
                 f"group={group_id}, task_id={task_id}, raw={raw_reply_text[:200]!r}",
             )
-            return False
+            return "skipped"
 
         if self._is_duplicate_reply(group_id, reply_text, "proactive"):
             self._log(
@@ -1436,7 +1526,7 @@ class AgenticMemoryPlugin(Star):
                 "[agentic_memory] Scheduled proactive reply skipped by dedup. "
                 f"group={group_id}, task_id={task_id}, reply={reply_text}",
             )
-            return False
+            return "skipped"
 
         try:
             await StarTools.send_message_by_id(
@@ -1445,12 +1535,33 @@ class AgenticMemoryPlugin(Star):
                 MessageChain().message(reply_text),
             )
         except Exception as exc:
+            error_text = str(exc)
+            lowered_error = error_text.lower()
+            fatal_error = any(
+                marker in error_text
+                for marker in (
+                    "被移出该群",
+                    "不在该群",
+                    "群不存在",
+                    "已退出该群",
+                    "不是群成员",
+                )
+            ) or any(
+                marker in lowered_error
+                for marker in (
+                    "not in group",
+                    "group not found",
+                    "removed from the group",
+                    "removed from group",
+                    "not a member",
+                )
+            )
             self._log(
                 "error",
                 "[agentic_memory] Failed to send scheduled proactive reply. "
-                f"group={group_id}, task_id={task_id}, error={exc}",
+                f"group={group_id}, task_id={task_id}, fatal={fatal_error}, error={exc}",
             )
-            return False
+            return "fatal_failure" if fatal_error else "retryable_failure"
 
         self._record_reply_history(group_id, reply_text)
         self._log(
@@ -1458,7 +1569,7 @@ class AgenticMemoryPlugin(Star):
             "[scheduled_proactive] Sent reply. "
             f"group={group_id}, task_id={task_id}, reply={reply_text}",
         )
-        return True
+        return "sent"
 
     async def _run_due_proactive_tasks(self) -> None:
         """Run proactive talk tasks that are due right now."""
@@ -1480,6 +1591,7 @@ class AgenticMemoryPlugin(Star):
 
             task_cooldown_seconds = max(0, int(task.get("cooldown_seconds", 0)))
             task_cooldown_key = f"proactive_task:{task_id}"
+            failure_retry_key = f"proactive_task_failure:{task_id}"
 
             for group_id in task_groups:
                 if not self._is_group_allowed(group_id):
@@ -1508,19 +1620,37 @@ class AgenticMemoryPlugin(Star):
                     task_cooldown_seconds,
                 ):
                     continue
+                if not self._is_cooldown_ready(
+                    group_id,
+                    failure_retry_key,
+                    self.scheduled_proactive_failure_retry_seconds,
+                ):
+                    continue
 
                 message_text = random.choice(task["messages"])
-                sent = await self._send_proactive_message_to_group(
+                send_status = await self._send_proactive_message_to_group(
                     group_id,
                     message_text,
                     task_id,
                 )
-                if sent:
+                if send_status == "sent":
                     self.proactive_task_last_run_dates[group_id][task_id] = today_text
                     if self.scheduled_proactive_cooldown_seconds > 0:
                         self._mark_cooldown(group_id, "proactive")
                     if task_cooldown_seconds > 0:
                         self._mark_cooldown(group_id, task_cooldown_key)
+                    continue
+
+                if send_status == "retryable_failure":
+                    self._mark_cooldown(group_id, failure_retry_key)
+                    continue
+
+                self.proactive_task_last_run_dates[group_id][task_id] = today_text
+                self._log(
+                    "info",
+                    "[agentic_memory] Scheduled proactive task finished without sending and will not retry today. "
+                    f"group={group_id}, task_id={task_id}, status={send_status}",
+                )
 
     async def _cron_proactive_talk(self) -> None:
         """Run scheduled proactive talk tasks in the background."""
@@ -1767,14 +1897,17 @@ class AgenticMemoryPlugin(Star):
         """
         lines: list[str] = []
         for row in rows:
-            if len(row) >= 8:
-                layer = str(row[2])
-                content = str(row[3]).strip()
-                created_at = str(row[4])
-            else:
+            row_values = list(row)
+            if len(row_values) >= 8:
+                layer = str(row_values[2])
+                content = str(row_values[3]).strip()
+                created_at = str(row_values[4])
+            elif len(row_values) >= 3:
                 layer = "paragraph"
-                content = str(row[1]).strip()
-                created_at = str(row[2])
+                content = str(row_values[1]).strip()
+                created_at = str(row_values[2])
+            else:
+                continue
             if not content:
                 continue
             prefix = f"[{layer}] " if include_layer else ""

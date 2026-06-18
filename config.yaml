@@ -397,6 +397,11 @@ proactive_talk_settings:
   # 其他定时任务也要至少等 1 小时才能再次发送。
   cooldown_seconds: 0
 
+  # 发送失败后的重试间隔（秒）。
+  # 仅用于“可重试失败”（例如临时网络波动）；像“不在群里/已被移出群”
+  # 这类明确失败会在当天停止重试，避免每 30 秒刷报错。
+  failure_retry_seconds: 1800
+
   # 默认投递群列表。
   # 如果某个 task 没单独写 group_ids，就使用这里的群号。
   # 若 group_scope.enabled=true，这里填写的群也必须在 group_whitelist 中。
