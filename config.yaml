@@ -159,33 +159,110 @@ probability_settings:
   boost_interject_probability: 0.3
 
 summary_settings:
-  # 段落摘要压成日摘要时，每批处理多少条 paragraph summary。
+  # 所有记忆归纳任务统一在每天这个时间点检查和执行。
+  # 格式必须是 "HH:MM"。
+  rollup_time: "04:00"
+
+  # paragraph -> daily：每批处理多少条 paragraph summary。
   # 推荐范围：5~20
   daily_chunk_size: 10
 
-  # 每个中间摘要的最大字数。
+  # paragraph -> daily：每个中间摘要的最大字数。
   # 推荐范围：60~150
   daily_chunk_summary_max_chars: 100
 
-  # 每日总结最大字数。
+  # paragraph -> daily：最终 daily summary 的最大字数。
   # 推荐范围：100~250
   daily_summary_max_chars: 150
 
-  # 历史长期总结最大字数。
-  # 推荐范围：150~300
-  history_summary_max_chars: 400
+  # daily -> month：每个中间摘要的最大字数。
+  # 推荐范围：80~180
+  month_chunk_summary_max_chars: 120
 
-  # 历史压缩时，最多喂给模型多少字符。
+  # daily -> month：最终 month summary 的最大字数。
+  # 推荐范围：120~260
+  month_summary_max_chars: 180
+
+  # daily -> month：最多喂给模型多少字符。
+  # 推荐范围：800~6000
+  month_input_char_limit: 3500
+
+  # month -> year：每个中间摘要的最大字数。
+  # 推荐范围：100~220
+  year_chunk_summary_max_chars: 140
+
+  # month -> year：最终 year summary 的最大字数。
+  # 推荐范围：150~320
+  year_summary_max_chars: 220
+
+  # month -> year：最多喂给模型多少字符。
+  # 推荐范围：1000~8000
+  year_input_char_limit: 4000
+
+  # year -> history：最终 history summary 的最大字数。
+  # 推荐范围：180~400
+  history_summary_max_chars: 320
+
+  # year -> history：最多喂给模型多少字符。
   # 推荐范围：1000~6000
   history_input_char_limit: 3000
 
-  # paragraph summary 保留多少天再压成 daily summary。
-  # 推荐范围：1~7
-  paragraph_retention_days: 2
+  # 被 daily 归纳后的 paragraph，再额外保留多少天再删除。
+  # 例如设为 1：今天凌晨 4 点刚归纳进 daily 的 paragraph，
+  # 会在明天凌晨 4 点之后进入清理范围。
+  paragraph_cleanup_delay_days: 1
 
-  # daily summary 保留多少天再进一步压成 history。
-  # 推荐范围：90~365
-  daily_retention_days: 365
+  # 被 month 归纳后的 daily，再额外保留多少个月再删除。
+  # 例如设为 1：本月 1 号凌晨 4 点刚归纳进 month 的上个月 daily，
+  # 会在下个月 1 号凌晨 4 点之后进入清理范围。
+  daily_cleanup_delay_months: 1
+
+  # 被 year 归纳后的 month，再额外保留多少年再删除。
+  # 例如设为 1：今年 1 月 1 日凌晨 4 点刚归纳进 year 的去年月记忆，
+  # 会在明年 1 月 1 日凌晨 4 点之后进入清理范围。
+  month_cleanup_delay_years: 1
+
+  # year 层最多保留最近多少个完整年份。
+  # 超过这个年限的 year，会进一步被归纳到 history。
+  year_retention_years: 3
+
+  # 被 history 归纳后的 year，再额外保留多少年再删除。
+  year_cleanup_delay_years: 1
+
+memory_lookup_settings:
+  # 是否启用“时间 / 事件回忆检索”。
+  enabled: true
+
+  # 是否启用“按时间去回忆”。
+  # 例如：刚才 / 今天 / 昨天 / 上个月 / 去年 / 去年 3 月。
+  time_recall_enabled: true
+
+  # 是否启用“按事件去反推记忆”。
+  # 例如：烤肉 / 聚餐 / 请客 / 午饭。
+  event_recall_enabled: true
+
+  # 只把“最近多少条 paragraph summary”作为普通背景带入回复。
+  recent_paragraph_limit: 5
+
+  # 单次记忆召回时，每种记忆层最多带入多少条。
+  daily_limit: 3
+  month_limit: 2
+  year_limit: 2
+  history_limit: 2
+  paragraph_limit: 3
+
+  # 从事件反推时间后，再联想附近多少条同期记忆。
+  neighbor_limit: 3
+
+  # “同期联想”时，允许跨多少天寻找附近记忆。
+  # 数值越大，越容易联想到同一阶段发生的其他事。
+  neighbor_window_days: 45
+
+  # 从用户问题里最多抽取多少个事件关键词用于弱匹配。
+  keyword_limit: 4
+
+  # 单条召回记忆在 prompt 中最多展示多少字，避免太长。
+  excerpt_max_chars: 120
 
 prompt_settings:
   # 在分析模型提示词里，最多截取多少人设文本用于辅助理解角色。
@@ -312,13 +389,20 @@ special_replies:
 
 proactive_talk_settings:
   # 是否启用“定时主动说话”。
-  # 开启后，插件会在白名单群里按下面的 tasks 独立执行。
+  # 开启后，插件会按下面的 tasks 独立执行。
   enabled: true
 
   # 所有定时主动发言共用的总冷却时间（秒）。
   # 例如设为 3600，表示某个群刚触发过一个定时任务后，
   # 其他定时任务也要至少等 1 小时才能再次发送。
   cooldown_seconds: 0
+
+  # 默认投递群列表。
+  # 如果某个 task 没单独写 group_ids，就使用这里的群号。
+  # 若 group_scope.enabled=true，这里填写的群也必须在 group_whitelist 中。
+  default_group_ids:
+    - "966648392"
+    - "157903619"
 
   # 可配置多个独立任务。
   # 每个任务每天最多执行一次。
@@ -329,6 +413,15 @@ proactive_talk_settings:
 
       # 固定触发时间，格式必须是 "HH:MM"
       time: "05:00"
+
+      # 该任务自己的额外冷却时间（秒）。
+      # 只限制同一个 task_id 在同一群里的再次发送。
+      cooldown_seconds: 0
+
+      # 可选：只让这条任务发到指定群。
+      # 不写则使用 default_group_ids。
+      # group_ids:
+      #   - "966648392"
 
       # 候选说话内容，可写一个或多个，命中时随机选一条。
       messages:
@@ -344,9 +437,21 @@ proactive_talk_settings:
       time_range_start: "10:30"
       time_range_end: "12:00"
 
+      cooldown_seconds: 0
+
       messages:
         - "中午吃啥？"
         - "一会儿吃啥？"
+
+    # 示例 3：给单独群的固定提醒
+    # - task_id: "afternoon_tea"
+    #   enabled: true
+    #   time: "15:30"
+    #   cooldown_seconds: 0
+    #   group_ids:
+    #     - "966648392"
+    #   messages:
+    #     - "下午要不要整点喝的？"
 
 logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。

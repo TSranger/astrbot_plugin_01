@@ -1,64 +1,101 @@
-"""
-数据库模块。用于存储历史记录和群友档案
-"""
+"""Database module for plugin memory summaries and user profiles."""
 
 import json
 import os
 import sqlite3
+from typing import Any
 
 from loguru import logger
 
 
 class MemoryDBManager:
-    def __init__(self, db_path="data/agentic_memory.db"):
+    """Manage SQLite persistence for summaries and user profiles."""
+
+    def __init__(self, db_path: str = "data/agentic_memory.db"):
+        """Initialize the SQLite database manager.
+
+        Args:
+            db_path: SQLite database file path.
+        """
         self.db_path = db_path
-        # 确保数据存放的文件夹存在
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._init_db()
 
-    def _get_conn(self):
-        # check_same_thread=False 允许在异步的 AstrBot 环境中跨线程调用数据库
+    def _get_conn(self) -> sqlite3.Connection:
+        """Create one SQLite connection for the current operation.
+
+        Returns:
+            SQLite connection with cross-thread access enabled.
+        """
         return sqlite3.connect(self.db_path, check_same_thread=False)
 
-    def _init_db(self):
-        """初始化数据库表结构"""
+    def _init_db(self) -> None:
+        """Initialize tables and apply lightweight schema migrations."""
         with self._get_conn() as conn:
             cursor = conn.cursor()
-
-            # 1. 创建聊天总结时间轴表 (日记本)
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Chat_Summaries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id TEXT NOT NULL,
-                    summary_type TEXT NOT NULL,  -- 'paragraph', 'daily', 'history'
+                    summary_type TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    memory_key TEXT DEFAULT '',
+                    period_start DATETIME DEFAULT NULL,
+                    period_end DATETIME DEFAULT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    is_significant BOOLEAN DEFAULT 0
+                    is_significant BOOLEAN DEFAULT 0,
+                    rolled_up_at DATETIME DEFAULT NULL,
+                    cleanup_after DATETIME DEFAULT NULL,
+                    source_count INTEGER DEFAULT 0
                 )
-            """)
-            # 建立联合索引，极大加速凌晨 4 点查询特定群、特定类型总结的速度
+                """
+            )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_group_type ON Chat_Summaries(group_id, summary_type)"
             )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_type_key ON Chat_Summaries(group_id, summary_type, memory_key)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_type_period ON Chat_Summaries(group_id, summary_type, period_start, period_end)"
+            )
 
-            # 2. 创建群友档案表 (二维画像)
-            cursor.execute("""
+            existing_columns = {
+                row[1]
+                for row in cursor.execute(
+                    "PRAGMA table_info(Chat_Summaries)"
+                ).fetchall()
+            }
+            required_columns = {
+                "memory_key": "TEXT DEFAULT ''",
+                "period_start": "DATETIME DEFAULT NULL",
+                "period_end": "DATETIME DEFAULT NULL",
+                "rolled_up_at": "DATETIME DEFAULT NULL",
+                "cleanup_after": "DATETIME DEFAULT NULL",
+                "source_count": "INTEGER DEFAULT 0",
+            }
+            for column_name, column_type in required_columns.items():
+                if column_name not in existing_columns:
+                    cursor.execute(
+                        f"ALTER TABLE Chat_Summaries ADD COLUMN {column_name} {column_type}"
+                    )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS User_Profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id TEXT NOT NULL,
                     nickname TEXT NOT NULL,
-                    fixed_data TEXT DEFAULT '{}',    -- 存放固定属性的 JSON 字符串
-                    dynamic_events TEXT DEFAULT '[]', -- 存放近期大事件的 JSON 字符串
+                    fixed_data TEXT DEFAULT '{}',
+                    dynamic_events TEXT DEFAULT '[]',
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(group_id, nickname)       -- 确保同一个群的同一个昵称只有一条记录
+                    UNIQUE(group_id, nickname)
                 )
-            """)
+                """
+            )
             conn.commit()
-            logger.info(f"SQLite 数据库初始化完成: {self.db_path}")
-
-    # ==========================================
-    #         聊天总结 (时间轴) 相关操作
-    # ==========================================
+            logger.info(f"SQLite database initialized: {self.db_path}")
 
     def add_summary(
         self,
@@ -66,38 +103,268 @@ class MemoryDBManager:
         summary_type: str,
         content: str,
         is_significant: bool = False,
-    ):
-        """添加一条新的总结 (段落/一天/历史)"""
+        memory_key: str = "",
+        period_start: str | None = None,
+        period_end: str | None = None,
+        rolled_up_at: str | None = None,
+        cleanup_after: str | None = None,
+        source_count: int = 0,
+    ) -> int:
+        """Insert one summary row.
+
+        Args:
+            group_id: Group identifier.
+            summary_type: Summary layer such as ``paragraph`` or ``daily``.
+            content: Summary text.
+            is_significant: Whether the summary is marked significant.
+            memory_key: Logical time bucket key for the summary.
+            period_start: Covered period start time.
+            period_end: Covered period end time.
+            rolled_up_at: Rollup timestamp when this row has been aggregated upward.
+            cleanup_after: Earliest time when this row may be deleted.
+            source_count: Number of source rows used for this summary.
+
+        Returns:
+            Inserted row id.
+        """
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO Chat_Summaries (group_id, summary_type, content, is_significant) VALUES (?, ?, ?, ?)",
-                (group_id, summary_type, content, is_significant),
+                """
+                INSERT INTO Chat_Summaries (
+                    group_id,
+                    summary_type,
+                    content,
+                    memory_key,
+                    period_start,
+                    period_end,
+                    is_significant,
+                    rolled_up_at,
+                    cleanup_after,
+                    source_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    group_id,
+                    summary_type,
+                    content,
+                    memory_key,
+                    period_start,
+                    period_end,
+                    is_significant,
+                    rolled_up_at,
+                    cleanup_after,
+                    source_count,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def get_summaries(
+        self,
+        group_id: str,
+        summary_type: str,
+        before_time: str | None = None,
+        memory_key: str | None = None,
+        limit: int | None = None,
+        order_desc: bool = False,
+        only_unrolled: bool = False,
+    ) -> list[tuple[Any, ...]]:
+        """Fetch summaries for one group and one layer.
+
+        Args:
+            group_id: Group identifier.
+            summary_type: Summary layer.
+            before_time: Optional upper bound for ``created_at``.
+            memory_key: Optional exact ``memory_key`` filter.
+            limit: Optional row limit.
+            order_desc: Whether to sort newest first.
+            only_unrolled: Whether to restrict rows not yet rolled upward.
+
+        Returns:
+            Summary rows.
+        """
+        conditions = ["group_id = ?", "summary_type = ?"]
+        params: list[Any] = [group_id, summary_type]
+
+        if before_time:
+            conditions.append("created_at < ?")
+            params.append(before_time)
+        if memory_key is not None:
+            conditions.append("memory_key = ?")
+            params.append(memory_key)
+        if only_unrolled:
+            conditions.append("rolled_up_at IS NULL")
+
+        order_clause = "DESC" if order_desc else "ASC"
+        sql = (
+            "SELECT id, content, created_at, is_significant, memory_key, period_start, "
+            "period_end, rolled_up_at, cleanup_after, source_count "
+            "FROM Chat_Summaries WHERE "
+            + " AND ".join(conditions)
+            + f" ORDER BY created_at {order_clause}, id {order_clause}"
+        )
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+
+    def get_rollup_candidates(
+        self,
+        group_id: str,
+        summary_type: str,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        exclude_memory_keys: list[str] | None = None,
+    ) -> list[tuple[Any, ...]]:
+        """Fetch rows eligible for upward rollup by covered period.
+
+        Args:
+            group_id: Group identifier.
+            summary_type: Source summary layer.
+            period_start: Optional lower bound for the covered period.
+            period_end: Optional upper bound for the covered period.
+            exclude_memory_keys: Optional memory keys to exclude.
+
+        Returns:
+            Candidate rows ordered by period and creation time.
+        """
+        conditions = ["group_id = ?", "summary_type = ?", "rolled_up_at IS NULL"]
+        params: list[Any] = [group_id, summary_type]
+
+        if period_start is not None:
+            conditions.append("COALESCE(period_end, created_at) >= ?")
+            params.append(period_start)
+        if period_end is not None:
+            conditions.append("COALESCE(period_start, created_at) < ?")
+            params.append(period_end)
+        if exclude_memory_keys:
+            placeholders = ", ".join("?" for _ in exclude_memory_keys)
+            conditions.append(f"COALESCE(memory_key, '') NOT IN ({placeholders})")
+            params.extend(exclude_memory_keys)
+
+        sql = (
+            "SELECT id, content, created_at, is_significant, memory_key, period_start, "
+            "period_end, rolled_up_at, cleanup_after, source_count "
+            "FROM Chat_Summaries WHERE "
+            + " AND ".join(conditions)
+            + " ORDER BY COALESCE(period_start, created_at) ASC, created_at ASC, id ASC"
+        )
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+
+    def get_summary_by_memory_key(
+        self,
+        group_id: str,
+        summary_type: str,
+        memory_key: str,
+    ) -> tuple[Any, ...] | None:
+        """Fetch the newest summary row for one memory key.
+
+        Args:
+            group_id: Group identifier.
+            summary_type: Summary layer.
+            memory_key: Logical memory key.
+
+        Returns:
+            Summary row or ``None``.
+        """
+        rows = self.get_summaries(
+            group_id,
+            summary_type,
+            memory_key=memory_key,
+            limit=1,
+            order_desc=True,
+        )
+        return rows[0] if rows else None
+
+    def update_summary_content(
+        self,
+        summary_id: int,
+        content: str,
+        is_significant: bool = False,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        source_count: int = 0,
+    ) -> None:
+        """Update one existing summary row.
+
+        Args:
+            summary_id: Row id to update.
+            content: New summary text.
+            is_significant: Updated significance flag.
+            period_start: Updated covered period start.
+            period_end: Updated covered period end.
+            source_count: Updated source count.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE Chat_Summaries
+                SET content = ?,
+                    is_significant = ?,
+                    period_start = ?,
+                    period_end = ?,
+                    source_count = ?
+                WHERE id = ?
+                """,
+                (
+                    content,
+                    is_significant,
+                    period_start,
+                    period_end,
+                    source_count,
+                    summary_id,
+                ),
             )
             conn.commit()
 
-    def get_summaries(
-        self, group_id: str, summary_type: str, before_time: str = None
-    ) -> list:
-        """获取总结记录 (常用于凌晨4点读取昨天的段落做合并)"""
+    def mark_summaries_rolled_up(
+        self,
+        summary_ids: list[int],
+        rolled_up_at: str,
+        cleanup_after: str | None = None,
+    ) -> None:
+        """Mark source summaries as already aggregated upward.
+
+        Args:
+            summary_ids: Source row ids.
+            rolled_up_at: Rollup timestamp.
+            cleanup_after: First safe deletion timestamp.
+        """
+        if not summary_ids:
+            return
+        placeholders = ", ".join("?" for _ in summary_ids)
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            if before_time:
-                cursor.execute(
-                    "SELECT id, content, created_at FROM Chat_Summaries WHERE group_id = ? AND summary_type = ? AND created_at < ? ORDER BY created_at ASC",
-                    (group_id, summary_type, before_time),
-                )
-            else:
-                cursor.execute(
-                    "SELECT id, content, created_at FROM Chat_Summaries WHERE group_id = ? AND summary_type = ? ORDER BY created_at ASC",
-                    (group_id, summary_type),
-                )
-            return cursor.fetchall()
+            cursor.execute(
+                f"""
+                UPDATE Chat_Summaries
+                SET rolled_up_at = ?,
+                    cleanup_after = COALESCE(?, cleanup_after)
+                WHERE id IN ({placeholders})
+                """,
+                [rolled_up_at, cleanup_after, *summary_ids],
+            )
+            conn.commit()
 
     def delete_summaries(
-        self, group_id: str, summary_type: str, before_time: str = None
-    ):
-        """删除旧的总结记录 (合并后用来清理战场)"""
+        self, group_id: str, summary_type: str, before_time: str | None = None
+    ) -> None:
+        """Delete summaries by layer and optional creation cutoff.
+
+        Args:
+            group_id: Group identifier.
+            summary_type: Summary layer.
+            before_time: Optional upper bound for ``created_at``.
+        """
         with self._get_conn() as conn:
             cursor = conn.cursor()
             if before_time:
@@ -112,12 +379,155 @@ class MemoryDBManager:
                 )
             conn.commit()
 
-    # ==========================================
-    #         群友档案 (二维画像) 相关操作
-    # ==========================================
+    def delete_ready_summaries(
+        self,
+        group_id: str,
+        summary_type: str,
+        now_text: str,
+    ) -> int:
+        """Delete rows that have already passed their delayed cleanup time.
 
-    def get_user_profile(self, group_id: str, nickname: str) -> dict:
-        """获取某个群友的完整档案，自动将 JSON 字符串反序列化为 Python 字典"""
+        Args:
+            group_id: Group identifier.
+            summary_type: Summary layer.
+            now_text: Current timestamp text.
+
+        Returns:
+            Deleted row count.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM Chat_Summaries
+                WHERE group_id = ?
+                  AND summary_type = ?
+                  AND rolled_up_at IS NOT NULL
+                  AND cleanup_after IS NOT NULL
+                  AND cleanup_after <= ?
+                """,
+                (group_id, summary_type, now_text),
+            )
+            conn.commit()
+            return int(cursor.rowcount or 0)
+
+    def list_group_ids_with_summaries(self) -> list[str]:
+        """List all groups that currently have stored summaries.
+
+        Returns:
+            Distinct group id list.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT DISTINCT group_id FROM Chat_Summaries ORDER BY group_id ASC"
+            )
+            return [str(row[0]) for row in cursor.fetchall()]
+
+    def search_summaries_by_keywords(
+        self,
+        group_id: str,
+        summary_types: list[str],
+        keywords: list[str],
+        limit: int,
+    ) -> list[tuple[Any, ...]]:
+        """Search summaries by lightweight keyword matching.
+
+        Args:
+            group_id: Group identifier.
+            summary_types: Candidate summary layers.
+            keywords: Keywords used for ``LIKE`` matching.
+            limit: Maximum returned rows.
+
+        Returns:
+            Matching summary rows.
+        """
+        if not summary_types or not keywords or limit <= 0:
+            return []
+
+        type_placeholders = ", ".join("?" for _ in summary_types)
+        keyword_conditions: list[str] = []
+        params: list[Any] = [group_id, *summary_types]
+
+        for keyword in keywords:
+            keyword_conditions.append("content LIKE ?")
+            params.append(f"%{keyword}%")
+
+        sql = (
+            "SELECT id, group_id, summary_type, content, created_at, memory_key, period_start, "
+            "period_end, is_significant, rolled_up_at, cleanup_after, source_count "
+            "FROM Chat_Summaries WHERE group_id = ? AND summary_type IN ("
+            + type_placeholders
+            + ") AND ("
+            + " OR ".join(keyword_conditions)
+            + ") ORDER BY is_significant DESC, created_at DESC, id DESC LIMIT ?"
+        )
+        params.append(limit)
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+
+    def get_neighbor_summaries(
+        self,
+        group_id: str,
+        anchor_start: str,
+        anchor_end: str,
+        limit: int,
+        exclude_ids: list[int] | None = None,
+    ) -> list[tuple[Any, ...]]:
+        """Fetch summaries whose covered period overlaps a time window.
+
+        Args:
+            group_id: Group identifier.
+            anchor_start: Window start timestamp.
+            anchor_end: Window end timestamp.
+            limit: Maximum returned rows.
+            exclude_ids: Optional row ids to exclude.
+
+        Returns:
+            Neighbor summary rows near the anchor window.
+        """
+        if limit <= 0:
+            return []
+
+        conditions = [
+            "group_id = ?",
+            "COALESCE(period_end, created_at) >= ?",
+            "COALESCE(period_start, created_at) <= ?",
+        ]
+        params: list[Any] = [group_id, anchor_start, anchor_end]
+
+        if exclude_ids:
+            placeholders = ", ".join("?" for _ in exclude_ids)
+            conditions.append(f"id NOT IN ({placeholders})")
+            params.extend(exclude_ids)
+
+        sql = (
+            "SELECT id, group_id, summary_type, content, created_at, memory_key, period_start, "
+            "period_end, is_significant, rolled_up_at, cleanup_after, source_count "
+            "FROM Chat_Summaries WHERE "
+            + " AND ".join(conditions)
+            + " ORDER BY is_significant DESC, COALESCE(period_start, created_at) DESC, id DESC LIMIT ?"
+        )
+        params.append(limit)
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+
+    def get_user_profile(self, group_id: str, nickname: str) -> dict[str, Any]:
+        """Get one user profile with decoded JSON fields.
+
+        Args:
+            group_id: Group identifier.
+            nickname: User nickname.
+
+        Returns:
+            Profile dictionary with fixed and dynamic memory.
+        """
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -134,14 +544,17 @@ class MemoryDBManager:
 
     def upsert_user_profile(
         self, group_id: str, nickname: str, fixed_data: dict, dynamic_events: list
-    ):
-        """
-        更新群友档案 (插入或更新)。
-        无论这个人是第一次被记录，还是更新已有记录，统一调这个方法。
+    ) -> None:
+        """Insert or update one user profile.
+
+        Args:
+            group_id: Group identifier.
+            nickname: User nickname.
+            fixed_data: Stable profile fields.
+            dynamic_events: Recent dynamic events.
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            # SQLite 神技：ON CONFLICT ... DO UPDATE，遇到主键/唯一约束冲突时自动转为 UPDATE
             cursor.execute(
                 """
                 INSERT INTO User_Profiles (group_id, nickname, fixed_data, dynamic_events, last_updated)
@@ -150,7 +563,7 @@ class MemoryDBManager:
                     fixed_data = excluded.fixed_data,
                     dynamic_events = excluded.dynamic_events,
                     last_updated = CURRENT_TIMESTAMP
-            """,
+                """,
                 (
                     group_id,
                     nickname,
