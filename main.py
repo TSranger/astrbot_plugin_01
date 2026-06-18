@@ -127,6 +127,11 @@ class AgenticMemoryPlugin(Star):
         
         logger.info(f"[备用监听器] 检测到 @ 消息，sender={sender_name}, message={message_text}")
         
+        # 【关键修复】禁用内置 Agent 的 Neo 模式
+        if hasattr(event, 'should_call_llm'):
+            event.should_call_llm(False)
+            logger.info(f"[备用监听器] 已调用 event.should_call_llm(False)")
+        
         # 获取最近消息上下文
         recent_msgs = self.message_buffers.get(group_id, [])[-15:]
         recent_msgs.append({"sender": sender_name, "msg": message_text})
@@ -193,6 +198,11 @@ class AgenticMemoryPlugin(Star):
 
         if is_mentioned:
             logger.info(f"[on_group_message] 检测到 @ 消息，sender={sender_name}, message={message_text}")
+            
+            # 【关键修复】禁用内置 Agent 的 Neo 模式
+            if hasattr(event, 'should_call_llm'):
+                event.should_call_llm(False)
+                logger.info(f"[on_group_message] 已调用 event.should_call_llm(False)")
             
             # 获取最近消息上下文
             recent_msgs = self.message_buffers.get(group_id, [])[-15:]
