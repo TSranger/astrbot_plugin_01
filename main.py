@@ -79,10 +79,10 @@ class AgenticMemoryPlugin(Star):
     #         事件监听与滑动窗口
     # ==========================================
 
-    # 【修复6-新方案】使用 EventMessageType.ALL 拦截所有消息，检查 At segment
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=9999)
-    async def intercept_at_message(self, event: AstrMessageEvent):
-        """用极高优先级拦截所有消息，检查是否 @ 了机器人"""
+    # 【修复6-方案B】使用 EventMessageType.ALL 作为备用监听器
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def handle_all_messages_backup(self, event: AstrMessageEvent):
+        """备用监听器：监听所有消息类型，作为 @ 处理的备选方案"""
         # 只处理群消息
         if not hasattr(event, 'message_obj'):
             return
@@ -97,34 +97,35 @@ class AgenticMemoryPlugin(Star):
         if not message_text:
             return
         
-        logger.debug(f"[新拦截器] 收到消息: group={group_id}, sender={sender_name}, msg={message_text[:50]}")
+        logger.debug(f"[备用监听器] 收到消息: group={group_id}, sender={sender_name}, msg={message_text[:50]}")
         
-        # 检查消息链中是否有 @ 机器人的 segment
-        is_at_me = False
-        try:
-            message_chain = event.get_messages()
-            bot_qq = str(event.get_self_id())
-            
-            for segment in message_chain:
-                if hasattr(segment, 'type') and segment.type == "At":
-                    # 检查是否 @ 了机器人
-                    qq = str(segment.data.get("qq", ""))
-                    if qq == bot_qq:
-                        is_at_me = True
-                        logger.info(f"[新拦截器] 检测到 At segment，qq={qq}, bot_qq={bot_qq}")
-                        break
-        except Exception as e:
-            logger.debug(f"[新拦截器] 检查 At segment 失败: {e}")
+        # 检查是否是 @ 机器人
+        is_mentioned = False
         
-        # 也检查 is_at 属性（如果可用）
+        # 方法1：检查 is_at 属性
         if hasattr(event, 'is_at') and getattr(event, 'is_at'):
-            is_at_me = True
-            logger.info(f"[新拦截器] is_at=True")
+            is_mentioned = True
+            logger.info(f"[备用监听器] 检测到 is_at=True")
         
-        if not is_at_me:
-            return  # 不是 @ 我的消息，直接返回
+        # 方法2：检查消息链中的 At segment
+        if not is_mentioned:
+            try:
+                message_chain = event.get_messages()
+                bot_qq = str(event.get_self_id())
+                for segment in message_chain:
+                    if hasattr(segment, 'type') and segment.type == "At":
+                        qq = str(segment.data.get("qq", ""))
+                        if qq == bot_qq:
+                            is_mentioned = True
+                            logger.info(f"[备用监听器] 检测到 At segment，qq={qq}")
+                            break
+            except Exception as e:
+                logger.debug(f"[备用监听器] 检查 At segment 失败: {e}")
         
-        logger.info(f"[新拦截器] 检测到 @ 消息，sender={sender_name}, message={message_text}")
+        if not is_mentioned:
+            return  # 不是 @ 消息，直接返回
+        
+        logger.info(f"[备用监听器] 检测到 @ 消息，sender={sender_name}, message={message_text}")
         
         # 获取最近消息上下文
         recent_msgs = self.message_buffers.get(group_id, [])[-15:]
@@ -135,53 +136,90 @@ class AgenticMemoryPlugin(Star):
         
         if reply_text:
             await event.send(event.plain_result(reply_text))
-            logger.info(f"[新拦截器] 机器人回复 {group_id} 群聊：{reply_text}")
+            logger.info(f"[备用监听器] 机器人回复 {group_id} 群聊：{reply_text}")
         else:
-            logger.warning(f"[新拦截器] 回复生成失败")
+            logger.warning(f"[备用监听器] 回复生成失败")
         
-        # 关键：阻止事件继续传播
-        if hasattr(event, 'stop_event'):
-            event.stop_event()
-            logger.info("[新拦截器] 已调用 event.stop_event()")
-        elif hasattr(event, 'stop_propagation'):
+        # 尝试阻止事件传播
+        if hasattr(event, 'stop_propagation'):
             event.stop_propagation()
-            logger.info("[新拦截器] 已调用 event.stop_propagation()")
+            logger.info(f"[备用监听器] 已调用 stop_propagation()")
+        elif hasattr(event, 'stop_event'):
+            event.stop_event()
+            logger.info(f"[备用监听器] 已调用 stop_event()")
         else:
-            logger.warning("[新拦截器] 事件对象没有 stop_event 或 stop_propagation 方法！")
+            logger.warning(f"[备用监听器] 事件对象没有停止方法")
         
         return
 
+    # 【修复6-方案A】在 on_group_message 中直接处理 @ 场景
     @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         group_id = str(getattr(event.message_obj, 'group_id', event.session_id))
         sender_name = event.get_sender_name()
         message_text = event.message_str.strip()
         
-        if not message_text: return
+        if not message_text:
+            return
 
-        # 拦截 @机器人 或 提及名字的消息
+        # 检查是否是 @ 机器人或提及名字
         bot_names = self.config.get('skill_settings', {}).get('bot_names', [])
         is_mentioned = False
         
+        # 方法1：检查 is_at 属性
         if hasattr(event, 'is_at') and getattr(event, 'is_at'):
             is_mentioned = True
-        elif any(name in message_text for name in bot_names):
-            is_mentioned = True
+            logger.info(f"[on_group_message] 检测到 is_at=True")
         
+        # 方法2：检查消息中是否包含机器人名字
+        if not is_mentioned and any(name in message_text for name in bot_names):
+            is_mentioned = True
+            logger.info(f"[on_group_message] 检测到名字提及: {message_text}")
+        
+        # 方法3：检查消息链中的 At segment
+        if not is_mentioned:
+            try:
+                message_chain = event.get_messages()
+                bot_qq = str(event.get_self_id())
+                for segment in message_chain:
+                    if hasattr(segment, 'type') and segment.type == "At":
+                        qq = str(segment.data.get("qq", ""))
+                        if qq == bot_qq:
+                            is_mentioned = True
+                            logger.info(f"[on_group_message] 检测到 At segment，qq={qq}")
+                            break
+            except Exception as e:
+                logger.debug(f"[on_group_message] 检查 At segment 失败: {e}")
+
         if is_mentioned:
-            logger.debug(f"[被@触发] 检测到 @ 或提及，sender={sender_name}, message={message_text}")
+            logger.info(f"[on_group_message] 检测到 @ 消息，sender={sender_name}, message={message_text}")
+            
+            # 获取最近消息上下文
             recent_msgs = self.message_buffers.get(group_id, [])[-15:]
             recent_msgs.append({"sender": sender_name, "msg": message_text})
+            
+            # 生成符合人设的回复
             reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
+            
             if reply_text:
                 await event.send(event.plain_result(reply_text))
-                logger.info(f"[被@触发] 机器人回复 {group_id} 群聊：{reply_text}")
-            # 尝试阻止事件传播，防止框架默认处理
+                logger.info(f"[on_group_message] 机器人回复 {group_id} 群聊：{reply_text}")
+            else:
+                logger.warning(f"[on_group_message] 回复生成失败")
+            
+            # 尝试阻止事件传播
             if hasattr(event, 'stop_propagation'):
                 event.stop_propagation()
-            return 
+                logger.info(f"[on_group_message] 已调用 stop_propagation()")
+            elif hasattr(event, 'stop_event'):
+                event.stop_event()
+                logger.info(f"[on_group_message] 已调用 stop_event()")
+            else:
+                logger.warning(f"[on_group_message] 事件对象没有停止方法")
+            
+            return  # 重要：@ 消息不收集到缓冲区
 
-        # 日常潜水收集消息
+        # 非 @ 消息，正常收集到缓冲区
         if group_id not in self.message_buffers:
             self.message_buffers[group_id] = []
             
