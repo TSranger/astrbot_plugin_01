@@ -79,6 +79,122 @@ class AgenticMemoryPlugin(Star):
     #         事件监听与滑动窗口
     # ==========================================
 
+    # 【修复6-方案A】诊断日志：确认拦截器是否被调用
+    @filter.event_message_type(EventMessageType.GROUP_MESSAGE, priority=9999)
+    async def intercept_at_message(self, event: AstrMessageEvent):
+        """用极高优先级拦截 @ 机器人的消息，自定义处理回复"""
+        # 诊断日志 - 确认拦截器被调用
+        logger.info("[高优先级拦截器] 收到消息事件！is_at={}, message_str='{}'".format(
+            getattr(event, 'is_at', False), 
+            event.message_str[:50] if event.message_str else ''
+        ))
+        
+        group_id = str(getattr(event.message_obj, 'group_id', event.session_id))
+        sender_name = event.get_sender_name()
+        message_text = event.message_str.strip()
+        
+        if not message_text:
+            logger.debug("[高优先级拦截器] 消息为空，跳过")
+            return
+
+        # 检查是否是 @ 机器人
+        bot_names = self.config.get('skill_settings', {}).get('bot_names', [])
+        is_mentioned = False
+        
+        if hasattr(event, 'is_at') and getattr(event, 'is_at'):
+            is_mentioned = True
+            logger.info("[高优先级拦截器] 检测到 is_at=True")
+        elif any(name in message_text for name in bot_names):
+            is_mentioned = True
+            logger.info(f"[高优先级拦截器] 检测到名字提及: {message_text}")
+        
+        if is_mentioned:
+            logger.info(f"[高优先级拦截器] 检测到 @ 消息，sender={sender_name}, message={message_text}")
+            
+            # 获取最近消息上下文
+            recent_msgs = self.message_buffers.get(group_id, [])[-15:]
+            recent_msgs.append({"sender": sender_name, "msg": message_text})
+            
+            # 生成符合人设的回复
+            reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
+            
+            if reply_text:
+                await event.send(event.plain_result(reply_text))
+                logger.info(f"[高优先级拦截器] 机器人回复 {group_id} 群聊：{reply_text}")
+            else:
+                logger.warning(f"[高优先级拦截器] 回复生成失败")
+            
+            # 关键：阻止事件继续传播，防止框架默认 AI 助手处理
+            if hasattr(event, 'stop_event'):
+                event.stop_event()
+                logger.info("[高优先级拦截器] 已调用 event.stop_event()")
+            elif hasattr(event, 'stop_propagation'):
+                event.stop_propagation()
+                logger.info("[高优先级拦截器] 已调用 event.stop_propagation()")
+            else:
+                logger.warning("[高优先级拦截器] 事件对象没有 stop_event 或 stop_propagation 方法！")
+            
+            return
+        else:
+            logger.debug("[高优先级拦截器] 不是 @ 消息，让事件继续传播")
+        # 不是 @ 消息，让事件继续传播到普通处理器
+        return
+
+    # 【修复6-方案B】使用 on_message 监听所有消息，作为备选方案处理 @ 场景
+    # 注意：这个处理器优先级较低，用于捕获高优先级拦截器可能遗漏的情况
+    @filter.on_message()
+    async def handle_all_messages(self, event: AstrMessageEvent):
+        """监听所有消息，作为备选方案处理 @ 场景"""
+        # 只处理群消息
+        if not hasattr(event, 'message_obj'):
+            return
+            
+        group_id = str(getattr(event.message_obj, 'group_id', event.session_id, ''))
+        if not group_id:
+            return
+            
+        sender_name = event.get_sender_name()
+        message_text = event.message_str.strip() if event.message_str else ''
+        
+        if not message_text:
+            return
+        
+        logger.debug(f"[on_message] 收到消息: group={group_id}, sender={sender_name}, msg={message_text[:50]}")
+        
+        # 检查是否是 @ 机器人
+        bot_names = self.config.get('skill_settings', {}).get('bot_names', [])
+        is_mentioned = False
+        
+        if hasattr(event, 'is_at') and getattr(event, 'is_at'):
+            is_mentioned = True
+        elif any(name in message_text for name in bot_names):
+            is_mentioned = True
+        
+        if is_mentioned:
+            logger.info(f"[on_message] 检测到 @ 消息，准备回复...")
+            
+            # 获取最近消息上下文
+            recent_msgs = self.message_buffers.get(group_id, [])[-15:]
+            recent_msgs.append({"sender": sender_name, "msg": message_text})
+            
+            # 生成符合人设的回复
+            reply_text = await self._generate_reply("有人@我或提到了我", recent_msgs, group_id)
+            
+            if reply_text:
+                await event.send(event.plain_result(reply_text))
+                logger.info(f"[on_message] 机器人回复 {group_id} 群聊：{reply_text}")
+            
+            # 尝试阻止事件传播
+            if hasattr(event, 'stop_event'):
+                event.stop_event()
+            elif hasattr(event, 'stop_propagation'):
+                event.stop_propagation()
+            return
+        
+        # 非 @ 消息，正常收集到缓冲区（避免与 on_group_message 重复收集）
+        # 只有在 on_group_message 没有被调用时才收集
+        # 这里不做收集，让 on_group_message 处理
+
     @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         group_id = str(getattr(event.message_obj, 'group_id', event.session_id))
@@ -192,7 +308,7 @@ class AgenticMemoryPlugin(Star):
                     self.db.upsert_user_profile(group_id, user_name, fixed, events)
                 
                 should_speak = True
-                logger.success(f"检测到大事。档案已更新，强制触发发言。")
+                logger.info(f"[重大事件] 检测到大事。档案已更新，强制触发发言。")
 
             else:
                 current_prob = self.boost_prob if matches_preference else self.base_prob
@@ -398,7 +514,7 @@ class AgenticMemoryPlugin(Star):
             if daily_summary:
                 self.db.add_summary(group_id, "daily", daily_summary)
                 self.db.delete_summaries(group_id, "paragraph", before_time=cutoff_time)
-                logger.success(f"群 {group_id} 的昨日记忆已折叠并清理完毕。")
+                logger.info(f"[记忆压缩] 群 {group_id} 的昨日记忆已折叠并清理完毕。")
 
     async def _compress_history_memory(self, group_id: str, cutoff_time: str):
         dailies = self.db.get_summaries(group_id, "daily", before_time=cutoff_time)
@@ -413,7 +529,7 @@ class AgenticMemoryPlugin(Star):
         if history_summary:
             self.db.add_summary(group_id, "history", history_summary)
             self.db.delete_summaries(group_id, "daily", before_time=cutoff_time)
-            logger.success(f"群 {group_id} 的年度老旧记忆已封存。")
+            logger.info(f"[记忆压缩] 群 {group_id} 的年度老旧记忆已封存。")
 
     async def _call_llm_simple(self, prompt: str) -> str:
         try:
