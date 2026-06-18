@@ -87,7 +87,7 @@ class AgenticMemoryPlugin(Star):
         if not hasattr(event, 'message_obj'):
             return
             
-        group_id = str(getattr(event.message_obj, 'group_id', event.session_id, ''))
+        group_id = str(getattr(event.message_obj, 'group_id', getattr(event, 'session_id', '')))
         if not group_id:
             return
         
