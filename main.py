@@ -13,7 +13,8 @@ import yaml
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.event.filter import EventMessageType
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .db_manager import MemoryDBManager
@@ -160,6 +161,12 @@ class AgenticMemoryPlugin(Star):
         self.short_windows: dict[str, deque[dict[str, Any]]] = {}
         self.reply_history: dict[str, deque[str]] = {}
         self.cooldowns: dict[str, dict[str, datetime]] = defaultdict(dict)
+        self.proactive_task_last_run_dates: dict[str, dict[str, str]] = defaultdict(
+            dict
+        )
+        self.proactive_task_planned_times: dict[str, dict[str, datetime]] = defaultdict(
+            dict
+        )
 
         self._log(
             "info",
@@ -170,6 +177,8 @@ class AgenticMemoryPlugin(Star):
         )
 
         asyncio.create_task(self._cron_daily_compression())
+        if self.proactive_talk_settings.get("enabled", False):
+            asyncio.create_task(self._cron_proactive_talk())
 
     def _resolve_plugin_log_path(self) -> Path:
         """Resolve the plugin-local log file path.
@@ -609,7 +618,6 @@ class AgenticMemoryPlugin(Star):
             ("【", "】"),
             ("[", "]"),
             ("(", ")"),
-            ("{", "}"),
         ]
         changed = True
         while cleaned and changed:
@@ -622,6 +630,8 @@ class AgenticMemoryPlugin(Star):
                         changed = True
 
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(r"^[\s,，.。!?！？;；:：~～\-]+", "", cleaned)
+        cleaned = re.sub(r"[\s,，.。!?！？;；:：~～\-]+$", "", cleaned).strip()
         return cleaned
 
     def _build_trigger_state(
@@ -814,20 +824,36 @@ class AgenticMemoryPlugin(Star):
         """
         cleaned = response_text.strip()
         cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
         try:
             loaded = json.loads(cleaned)
             return loaded if isinstance(loaded, dict) else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             start = cleaned.find("{")
             end = cleaned.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                return {}
-            try:
-                loaded = json.loads(cleaned[start : end + 1])
-                return loaded if isinstance(loaded, dict) else {}
-            except json.JSONDecodeError:
-                self._log("warning", f"Failed to parse JSON response: {cleaned[:200]}")
-                return {}
+            if start != -1 and end != -1 and end > start:
+                candidate = cleaned[start : end + 1]
+                try:
+                    loaded = json.loads(candidate)
+                    return loaded if isinstance(loaded, dict) else {}
+                except json.JSONDecodeError as nested_exc:
+                    brace_delta = candidate.count("{") - candidate.count("}")
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Failed to parse JSON response after object extraction. "
+                        f"error={nested_exc}; brace_delta={brace_delta}; length={len(candidate)}; "
+                        f"head={candidate[:200]!r}; tail={candidate[-200:]!r}",
+                    )
+                    return {}
+
+            brace_delta = cleaned.count("{") - cleaned.count("}")
+            self._log(
+                "warning",
+                "[agentic_memory] Failed to parse JSON response. "
+                f"error={exc}; brace_delta={brace_delta}; length={len(cleaned)}; "
+                f"head={cleaned[:200]!r}; tail={cleaned[-200:]!r}",
+            )
+            return {}
 
     async def _send_reply(
         self,
@@ -849,11 +875,13 @@ class AgenticMemoryPlugin(Star):
         Returns:
             ``True`` when the message was sent successfully.
         """
+        raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
         if not reply_text:
             self._log(
                 "warning",
-                f"[agentic_memory] Empty reply after sanitize. group={group_id}, channel={channel}",
+                "[agentic_memory] Empty reply after sanitize. "
+                f"group={group_id}, channel={channel}, raw={raw_reply_text[:200]!r}",
             )
             return False
         if self._is_duplicate_reply(group_id, reply_text, channel):
@@ -895,6 +923,279 @@ class AgenticMemoryPlugin(Star):
         stop_event = getattr(event, "stop_event", None)
         if callable(stop_event):
             stop_event()
+
+    def _normalize_proactive_tasks(self) -> list[dict[str, Any]]:
+        """Normalize scheduled proactive talk tasks from config.
+
+        Returns:
+            Enabled task definitions with validated ids, times, and messages.
+        """
+        if not self.proactive_talk_settings.get("enabled", False):
+            return []
+
+        tasks = self.proactive_talk_settings.get("tasks", [])
+        normalized_tasks: list[dict[str, Any]] = []
+
+        for index, task in enumerate(tasks):
+            if not isinstance(task, dict) or not task.get("enabled", True):
+                continue
+
+            task_id = (
+                str(task.get("task_id", f"task_{index + 1}")).strip()
+                or f"task_{index + 1}"
+            )
+            fixed_time = str(task.get("time", "")).strip()
+            range_start = str(task.get("time_range_start", "")).strip()
+            range_end = str(task.get("time_range_end", "")).strip()
+
+            messages_value = task.get("messages", [])
+            if isinstance(messages_value, str):
+                messages = [messages_value.strip()] if messages_value.strip() else []
+            elif isinstance(messages_value, list):
+                messages = [
+                    str(item).strip() for item in messages_value if str(item).strip()
+                ]
+            else:
+                messages = []
+
+            if not messages:
+                self._log(
+                    "warning",
+                    f"[agentic_memory] Skip proactive task without messages: task_id={task_id}",
+                )
+                continue
+
+            if fixed_time:
+                if not re.fullmatch(r"\d{2}:\d{2}", fixed_time):
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip proactive task with invalid fixed time. "
+                        f"task_id={task_id}, time={fixed_time}",
+                    )
+                    continue
+            else:
+                if not (
+                    re.fullmatch(r"\d{2}:\d{2}", range_start)
+                    and re.fullmatch(r"\d{2}:\d{2}", range_end)
+                ):
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip proactive task with invalid range. "
+                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                    )
+                    continue
+                if range_end < range_start:
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip proactive task whose range end is earlier than start. "
+                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                    )
+                    continue
+
+            normalized_tasks.append(
+                {
+                    "task_id": task_id,
+                    "time": fixed_time,
+                    "time_range_start": range_start,
+                    "time_range_end": range_end,
+                    "messages": messages,
+                }
+            )
+
+        return normalized_tasks
+
+    def _pick_proactive_task_time(
+        self, task: dict[str, Any], today: datetime
+    ) -> datetime:
+        """Pick today's execution time for one proactive task.
+
+        Args:
+            task: Normalized proactive task config.
+            today: Current datetime used for building today's target.
+
+        Returns:
+            Today's target execution datetime.
+        """
+        fixed_time = str(task.get("time", "")).strip()
+        if fixed_time:
+            hour, minute = fixed_time.split(":")
+            return today.replace(
+                hour=int(hour),
+                minute=int(minute),
+                second=0,
+                microsecond=0,
+            )
+
+        range_start = str(task.get("time_range_start", "")).strip()
+        range_end = str(task.get("time_range_end", "")).strip()
+        start_hour, start_minute = range_start.split(":")
+        end_hour, end_minute = range_end.split(":")
+        start_dt = today.replace(
+            hour=int(start_hour),
+            minute=int(start_minute),
+            second=0,
+            microsecond=0,
+        )
+        end_dt = today.replace(
+            hour=int(end_hour),
+            minute=int(end_minute),
+            second=0,
+            microsecond=0,
+        )
+        random_seconds = random.randint(0, int((end_dt - start_dt).total_seconds()))
+        return start_dt + timedelta(seconds=random_seconds)
+
+    def _get_planned_proactive_task_time(
+        self,
+        group_id: str,
+        task: dict[str, Any],
+        now: datetime,
+    ) -> datetime:
+        """Get today's stable planned execution time for one task and group.
+
+        Args:
+            group_id: Target group id.
+            task: Normalized proactive task config.
+            now: Current datetime.
+
+        Returns:
+            Stable execution time for today.
+        """
+        task_id = str(task["task_id"])
+        planned_time = self.proactive_task_planned_times[group_id].get(task_id)
+        if planned_time and planned_time.date() == now.date():
+            return planned_time
+
+        planned_time = self._pick_proactive_task_time(task, now)
+        self.proactive_task_planned_times[group_id][task_id] = planned_time
+        self._log(
+            "info",
+            "[agentic_memory] Planned proactive task time. "
+            f"group={group_id}, task_id={task_id}, planned_at={planned_time.isoformat(timespec='seconds')}",
+        )
+        return planned_time
+
+    def _get_allowed_proactive_groups(self) -> list[str]:
+        """Get groups that scheduled proactive tasks may send to.
+
+        Returns:
+            Allowed group id list.
+        """
+        whitelist = self.group_scope.get("group_whitelist", [])
+        if not isinstance(whitelist, list):
+            return []
+        return [str(item).strip() for item in whitelist if str(item).strip()]
+
+    async def _send_proactive_message_to_group(
+        self,
+        group_id: str,
+        reply_text: str,
+        task_id: str,
+    ) -> bool:
+        """Send a scheduled proactive message to one group.
+
+        Args:
+            group_id: Target group id.
+            reply_text: Message text to send.
+            task_id: Proactive task identifier.
+
+        Returns:
+            ``True`` when the message was sent successfully.
+        """
+        raw_reply_text = str(reply_text)
+        reply_text = self._sanitize_reply_text(reply_text)
+        if not reply_text:
+            self._log(
+                "warning",
+                "[agentic_memory] Scheduled proactive reply is empty after sanitize. "
+                f"group={group_id}, task_id={task_id}, raw={raw_reply_text[:200]!r}",
+            )
+            return False
+
+        if self._is_duplicate_reply(group_id, reply_text, "proactive"):
+            self._log(
+                "info",
+                "[agentic_memory] Scheduled proactive reply skipped by dedup. "
+                f"group={group_id}, task_id={task_id}, reply={reply_text}",
+            )
+            return False
+
+        try:
+            await StarTools.send_message_by_id(
+                "GroupMessage",
+                group_id,
+                MessageChain().message(reply_text),
+            )
+        except Exception as exc:
+            self._log(
+                "error",
+                "[agentic_memory] Failed to send scheduled proactive reply. "
+                f"group={group_id}, task_id={task_id}, error={exc}",
+            )
+            return False
+
+        self._record_reply_history(group_id, reply_text)
+        self._log(
+            "info",
+            "[scheduled_proactive] Sent reply. "
+            f"group={group_id}, task_id={task_id}, reply={reply_text}",
+        )
+        return True
+
+    async def _run_due_proactive_tasks(self) -> None:
+        """Run proactive talk tasks that are due right now."""
+        tasks = self._normalize_proactive_tasks()
+        if not tasks:
+            return
+
+        now = datetime.now()
+        today_text = now.strftime("%Y-%m-%d")
+        allowed_groups = self._get_allowed_proactive_groups()
+        if not allowed_groups:
+            return
+
+        for task in tasks:
+            task_id = str(task["task_id"])
+            for group_id in allowed_groups:
+                if not self._is_group_allowed(group_id):
+                    continue
+                if (
+                    self.proactive_task_last_run_dates[group_id].get(task_id)
+                    == today_text
+                ):
+                    continue
+
+                target_time = self._get_planned_proactive_task_time(group_id, task, now)
+                if now < target_time:
+                    continue
+                if not self._is_cooldown_ready(
+                    group_id,
+                    "proactive",
+                    self.proactive_cooldown_seconds,
+                ):
+                    continue
+
+                message_text = random.choice(task["messages"])
+                sent = await self._send_proactive_message_to_group(
+                    group_id,
+                    message_text,
+                    task_id,
+                )
+                if sent:
+                    self.proactive_task_last_run_dates[group_id][task_id] = today_text
+                    self._mark_cooldown(group_id, "proactive")
+
+    async def _cron_proactive_talk(self) -> None:
+        """Run scheduled proactive talk tasks in the background."""
+        self._log("info", "[agentic_memory] Proactive talk scheduler started.")
+        while True:
+            try:
+                await self._run_due_proactive_tasks()
+            except Exception as exc:
+                self._log(
+                    "error", f"[agentic_memory] Proactive talk scheduler failed: {exc}"
+                )
+            await asyncio.sleep(30)
 
     async def _build_chat_reply(
         self,

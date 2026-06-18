@@ -55,7 +55,7 @@ skill_settings:
   # - 容易被群友叫的简称
   bot_names:
     # - "小号"
-    - "漫舞时空"
+    # - "漫舞时空"
     - "漫游时空"
 
   # “直接唤醒问句”的正则表达式列表。
@@ -65,8 +65,8 @@ skill_settings:
   # - 带 (?i) 表示忽略大小写
   # - 可自行加入更多口语问法
   direct_wake_question_patterns:
-    - "(?i).*(小号|漫舞时空|漫游时空).*(吗|呢|怎么|为什么|咋|啥|什么|会不会|是不是).*"
-    - "(?i).*(问|问下|想问).*(小号|漫舞时空|漫游时空).*"
+    - "(?i).*(派蒙|漫游时空).*(吗|呢|怎么|为什么|咋|啥|什么|会不会|是不是).*"
+    - "(?i).*(问|问下|想问).*(派蒙|漫游时空).*"
 
 message_reaction_settings:
   # 被 @ / 被点名 / 被直接问话时，取最近多少条消息作为即时回复上下文。
@@ -152,11 +152,11 @@ probability_settings:
   # 只影响“长窗口分析后，机器人想不想主动接一句”。
   # 越低越像低存在感群友。
   # 推荐范围：0.03~0.15
-  base_interject_probability: 1.0
+  base_interject_probability: 0.1
 
   # 当当前话题和角色偏好更匹配时，主动插话概率提升到多少。
   # 推荐范围：0.15~0.40
-  boost_interject_probability: 1.0
+  boost_interject_probability: 0.3
 
 summary_settings:
   # 段落摘要压成日摘要时，每批处理多少条 paragraph summary。
@@ -311,27 +311,42 @@ special_replies:
       scope: "whitelist_only"
 
 proactive_talk_settings:
-  # 预留配置：是否启用定时主动开话题。
-  # 当前主逻辑里还没有真正消费这组配置；
-  # 现在主要是给未来扩展留接口。
-  enabled: false
+  # 是否启用“定时主动说话”。
+  # 开启后，插件会在白名单群里按下面的 tasks 独立执行。
+  enabled: true
 
-  # 允许主动开口的时间段列表，格式固定为 "HH:MM-HH:MM"
-  # 例如：
-  # - "10:30-11:30"
-  # - "20:00-22:00"
-  time_windows:
-    - "10:30-11:30"
+  # 所有定时主动发言共用的总冷却时间（秒）。
+  # 例如设为 3600，表示某个群刚触发过一个定时任务后，
+  # 其他定时任务也要至少等 1 小时才能再次发送。
+  cooldown_seconds: 0
 
-  # 可主动抛出的候选话题。
-  candidate_topics:
-    - "中午吃啥？"
+  # 可配置多个独立任务。
+  # 每个任务每天最多执行一次。
+  tasks:
+    # 示例 1：固定时间
+    - task_id: "night_champion"
+      enabled: true
 
-  # 每个群每天最多主动触发几次。
-  max_triggers_per_group_per_day: 1
+      # 固定触发时间，格式必须是 "HH:MM"
+      time: "05:00"
 
-  # 主动开话题总冷却时间（秒）。
-  cooldown_seconds: 21600
+      # 候选说话内容，可写一个或多个，命中时随机选一条。
+      messages:
+        - "我就是熬夜冠军！"
+
+    # 示例 2：随机时间范围
+    - task_id: "lunch_question"
+      enabled: true
+
+      # 随机范围模式：
+      # 当不写 time，而是写 time_range_start / time_range_end 时，
+      # 插件会在这个范围内为“当天”随机抽一个固定时刻执行。
+      time_range_start: "10:30"
+      time_range_end: "12:00"
+
+      messages:
+        - "中午吃啥？"
+        - "一会儿吃啥？"
 
 logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。
