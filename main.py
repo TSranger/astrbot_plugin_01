@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import defaultdict, deque
@@ -48,6 +49,7 @@ class AgenticMemoryPlugin(Star):
         self.reply_dedup_settings = self.config.get("reply_dedup", {})
         self.special_reply_settings = self.config.get("special_replies", {})
         self.proactive_talk_settings = self.config.get("proactive_talk_settings", {})
+        self.logging_settings = self.config.get("logging_settings", {})
         self.bot_names = [
             str(name).strip()
             for name in self.skill_settings.get("bot_names", [])
@@ -133,6 +135,21 @@ class AgenticMemoryPlugin(Star):
             self.reply_dedup_settings.get("retry_once_on_duplicate", False),
         )
 
+        self.file_logging_enabled = bool(
+            self.logging_settings.get("file_logging_enabled", True),
+        )
+        self.raw_event_debug_enabled = bool(
+            self.logging_settings.get("raw_event_debug_enabled", False),
+        )
+        self.raw_event_message_chain_enabled = bool(
+            self.logging_settings.get("raw_event_message_chain_enabled", True),
+        )
+        self.raw_event_max_chars = max(
+            200,
+            int(self.logging_settings.get("raw_event_max_chars", 4000)),
+        )
+        self.plugin_file_logger = self._setup_plugin_file_logger()
+
         self.skill_content = self._load_skill(
             self.skill_settings.get("active_skill_file", ""),
         )
@@ -144,7 +161,173 @@ class AgenticMemoryPlugin(Star):
         self.reply_history: dict[str, deque[str]] = {}
         self.cooldowns: dict[str, dict[str, datetime]] = defaultdict(dict)
 
+        self._log(
+            "info",
+            "[agentic_memory] Plugin initialized. "
+            f"file_logging_enabled={self.file_logging_enabled}, "
+            f"raw_event_debug_enabled={self.raw_event_debug_enabled}, "
+            f"log_file={self._resolve_plugin_log_path()}",
+        )
+
         asyncio.create_task(self._cron_daily_compression())
+
+    def _resolve_plugin_log_path(self) -> Path:
+        """Resolve the plugin-local log file path.
+
+        Returns:
+            Absolute log file path inside AstrBot plugin data when a relative path is used.
+        """
+        configured_path = Path(
+            str(
+                self.logging_settings.get(
+                    "log_file_path",
+                    "astrbot_plugin_01/agentic_memory_plugin.log",
+                )
+            ),
+        )
+        if configured_path.is_absolute():
+            log_path = configured_path
+        else:
+            log_path = Path(get_astrbot_plugin_data_path()) / configured_path
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        return log_path
+
+    def _setup_plugin_file_logger(self) -> logging.Logger | None:
+        """Create the plugin-local file logger when enabled.
+
+        Returns:
+            Configured ``logging.Logger`` instance or ``None`` when disabled.
+        """
+        if not self.file_logging_enabled:
+            return None
+
+        log_path = self._resolve_plugin_log_path()
+        plugin_logger = logging.getLogger(f"astrbot_plugin_01.file.{id(self)}")
+        plugin_logger.setLevel(logging.INFO)
+        plugin_logger.propagate = False
+        plugin_logger.handlers.clear()
+
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+        )
+        plugin_logger.addHandler(handler)
+        return plugin_logger
+
+    def _log(self, level: str, message: str) -> None:
+        """Write plugin logs to AstrBot logger and optional plugin file logger.
+
+        Args:
+            level: Logging level name such as ``info`` or ``error``.
+            message: Final log message.
+        """
+        log_func = getattr(logger, level, None)
+        if callable(log_func):
+            log_func(message)
+
+        file_log_func = getattr(self.plugin_file_logger, level, None)
+        if callable(file_log_func):
+            file_log_func(message)
+
+    def _truncate_debug_text(self, value: Any) -> str:
+        """Trim long debug text to the configured maximum length.
+
+        Args:
+            value: Original debug value.
+
+        Returns:
+            Possibly truncated debug text.
+        """
+        normalized = str(value)
+        if len(normalized) <= self.raw_event_max_chars:
+            return normalized
+        return normalized[: self.raw_event_max_chars] + "...(truncated)"
+
+    def _serialize_message_segment(self, segment: Any) -> dict[str, Any]:
+        """Convert one message segment into a JSON-friendly structure.
+
+        Args:
+            segment: Message segment object from the event adapter.
+
+        Returns:
+            Dictionary that captures common fields for debugging.
+        """
+        serialized = {
+            "repr": self._truncate_debug_text(repr(segment)),
+            "type": str(getattr(segment, "type", "")),
+        }
+
+        for attr_name in ("qq", "text", "id", "file", "url"):
+            attr_value = getattr(segment, attr_name, None)
+            if attr_value is not None:
+                serialized[attr_name] = self._truncate_debug_text(attr_value)
+
+        segment_data = getattr(segment, "data", None)
+        if segment_data is not None:
+            serialized["data"] = self._truncate_debug_text(segment_data)
+
+        to_dict = getattr(segment, "toDict", None)
+        if callable(to_dict):
+            try:
+                serialized["toDict"] = self._truncate_debug_text(to_dict())
+            except Exception as exc:
+                serialized["toDict_error"] = str(exc)
+
+        return serialized
+
+    def _log_raw_event_debug(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        message_text: str,
+    ) -> None:
+        """Write raw incoming event structure for troubleshooting mention parsing.
+
+        Args:
+            event: Incoming group event.
+            group_id: Current group identifier.
+            message_text: Parsed plain message text.
+        """
+        if not self.raw_event_debug_enabled:
+            return
+
+        message_obj = getattr(event, "message_obj", None)
+        payload = {
+            "group_id": group_id,
+            "session_id": str(getattr(event, "session_id", "")),
+            "self_id": str(event.get_self_id()).strip(),
+            "sender_name": str(event.get_sender_name()).strip(),
+            "message_str": self._truncate_debug_text(getattr(event, "message_str", "")),
+            "parsed_message_text": self._truncate_debug_text(message_text),
+            "event_is_at": bool(getattr(event, "is_at", False)),
+            "message_obj_type": type(message_obj).__name__ if message_obj else "",
+            "message_obj_group_id": str(getattr(message_obj, "group_id", "")),
+            "message_obj_sender_id": str(getattr(message_obj, "sender_id", "")),
+            "message_obj_user_id": str(getattr(message_obj, "user_id", "")),
+            "message_obj_message": self._truncate_debug_text(
+                getattr(message_obj, "message", ""),
+            ),
+            "message_obj_raw_message": self._truncate_debug_text(
+                getattr(message_obj, "raw_message", ""),
+            ),
+            "message_obj_repr": self._truncate_debug_text(repr(message_obj)),
+        }
+
+        if self.raw_event_message_chain_enabled:
+            try:
+                payload["message_chain"] = [
+                    self._serialize_message_segment(segment)
+                    for segment in event.get_messages()
+                ]
+            except Exception as exc:
+                payload["message_chain_error"] = str(exc)
+
+        self._log(
+            "info",
+            "[agentic_memory][raw_event] "
+            + json.dumps(payload, ensure_ascii=False, default=str),
+        )
 
     def _load_config(self, path: Path) -> dict[str, Any]:
         """Load plugin configuration.
@@ -180,7 +363,7 @@ class AgenticMemoryPlugin(Star):
         if not skill_file.is_absolute():
             skill_file = self.plugin_dir / skill_path
         if not skill_file.exists():
-            logger.warning(f"Skill file was not found: {skill_file}")
+            self._log("warning", f"Skill file was not found: {skill_file}")
             return "You are a natural, casual group member."
         return skill_file.read_text(encoding="utf-8")
 
@@ -333,6 +516,10 @@ class AgenticMemoryPlugin(Star):
 
         bot_id = str(event.get_self_id()).strip()
         if not bot_id:
+            self._log(
+                "warning",
+                "[agentic_memory] Missing bot self id when checking mention.",
+            )
             return False
 
         try:
@@ -367,10 +554,28 @@ class AgenticMemoryPlugin(Star):
                 ):
                     return True
         except Exception as exc:
-            logger.debug(f"Failed to inspect message chain mentions: {exc}")
+            self._log("debug", f"Failed to inspect message chain mentions: {exc}")
 
-        message_text = str(getattr(event, "message_str", "")).strip()
-        return f"@{bot_id}" in message_text if message_text else False
+        raw_candidates = [
+            str(getattr(event, "message_str", "")).strip(),
+            str(getattr(getattr(event, "message_obj", None), "message", "")).strip(),
+            str(
+                getattr(getattr(event, "message_obj", None), "raw_message", "")
+            ).strip(),
+        ]
+        for raw_text in raw_candidates:
+            if not raw_text:
+                continue
+            if f"@{bot_id}" in raw_text:
+                return True
+            if f"[At:{bot_id}]" in raw_text:
+                return True
+            if f"[CQ:at,qq={bot_id}]" in raw_text:
+                return True
+            if f"[CQ:at,qq={bot_id}," in raw_text:
+                return True
+
+        return False
 
     def _sanitize_reply_text(self, text: str) -> str:
         """Clean model output before sending it to the group.
@@ -621,7 +826,7 @@ class AgenticMemoryPlugin(Star):
                 loaded = json.loads(cleaned[start : end + 1])
                 return loaded if isinstance(loaded, dict) else {}
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse JSON response: {cleaned[:200]}")
+                self._log("warning", f"Failed to parse JSON response: {cleaned[:200]}")
                 return {}
 
     async def _send_reply(
@@ -646,16 +851,30 @@ class AgenticMemoryPlugin(Star):
         """
         reply_text = self._sanitize_reply_text(reply_text)
         if not reply_text:
+            self._log(
+                "warning",
+                f"[agentic_memory] Empty reply after sanitize. group={group_id}, channel={channel}",
+            )
             return False
         if self._is_duplicate_reply(group_id, reply_text, channel):
-            logger.info(f"Skipped duplicated reply in group {group_id}: {reply_text}")
+            self._log(
+                "info", f"Skipped duplicated reply in group {group_id}: {reply_text}"
+            )
             return False
 
-        await event.send(event.plain_result(reply_text))
+        try:
+            await event.send(event.plain_result(reply_text))
+        except Exception as exc:
+            self._log(
+                "error",
+                f"[agentic_memory] Failed to send reply. group={group_id}, channel={channel}, error={exc}",
+            )
+            return False
+
         self._record_reply_history(group_id, reply_text)
         if cooldown_key:
             self._mark_cooldown(group_id, cooldown_key)
-        logger.info(f"[{channel}] Sent reply in group {group_id}: {reply_text}")
+        self._log("info", f"[{channel}] Sent reply in group {group_id}: {reply_text}")
         return True
 
     def _stop_event_flow(self, event: AstrMessageEvent) -> None:
@@ -802,11 +1021,19 @@ class AgenticMemoryPlugin(Star):
             f"9. Output reply only."
         )
 
-        reply_text = await self.router.text_chat(
-            role="chat",
-            prompt=prompt,
-            system_prompt=self.skill_content,
-        )
+        try:
+            reply_text = await self.router.text_chat(
+                role="chat",
+                prompt=prompt,
+                system_prompt=self.skill_content,
+            )
+        except Exception as exc:
+            self._log(
+                "error",
+                f"[agentic_memory] Chat generation failed. group={group_id}, channel={channel}, error={exc}",
+            )
+            return ""
+
         reply_text = self._sanitize_reply_text(reply_text)
 
         if (
@@ -815,11 +1042,18 @@ class AgenticMemoryPlugin(Star):
             and self.dedup_retry_once
         ):
             retry_prompt = f"{prompt}\n6. Avoid repeating your recent wording."
-            retry_text = await self.router.text_chat(
-                role="chat",
-                prompt=retry_prompt,
-                system_prompt=self.skill_content,
-            )
+            try:
+                retry_text = await self.router.text_chat(
+                    role="chat",
+                    prompt=retry_prompt,
+                    system_prompt=self.skill_content,
+                )
+            except Exception as exc:
+                self._log(
+                    "error",
+                    f"[agentic_memory] Chat retry failed. group={group_id}, channel={channel}, error={exc}",
+                )
+                return reply_text
             return self._sanitize_reply_text(retry_text)
 
         return reply_text
@@ -899,7 +1133,7 @@ class AgenticMemoryPlugin(Star):
             merged = self._sanitize_reply_text(merged)
             return merged or f"{event_one}；{event_two}"
         except Exception as exc:
-            logger.error(f"Failed to merge dynamic events: {exc}")
+            self._log("error", f"Failed to merge dynamic events: {exc}")
             return f"{event_one}；{event_two}"
 
     async def _process_memory_task(
@@ -1017,20 +1251,22 @@ class AgenticMemoryPlugin(Star):
                 cooldown_key="proactive",
             )
             if not sent:
-                logger.info(
+                self._log(
+                    "info",
                     f"Proactive reply was skipped. group={group_id}, topic={interject_topic}",
                 )
         except Exception as exc:
-            logger.error(f"Background memory task failed: {exc}")
+            self._log("error", f"Background memory task failed: {exc}")
 
     @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent) -> None:
         """Handle group messages for whitelist, immediate reply, and memory logic.
 
         Args:
-            event: Incoming group message event.
+            event: Incoming message event.
         """
         if not hasattr(event, "message_obj"):
+            self._log("warning", "[agentic_memory] Group event has no message_obj.")
             return
         group_id = str(
             getattr(
@@ -1039,15 +1275,39 @@ class AgenticMemoryPlugin(Star):
                 getattr(event, "session_id", ""),
             ),
         ).strip()
-        if not group_id or not self._is_group_allowed(group_id):
+        if not group_id:
+            self._log(
+                "warning", "[agentic_memory] Received group message without group_id."
+            )
+            return
+        if not self._is_group_allowed(group_id):
+            self._log(
+                "info", f"[agentic_memory] Group {group_id} is blocked by group_scope."
+            )
             return
 
         message_text = event.message_str.strip() if event.message_str else ""
         if not message_text:
+            message_text = str(
+                getattr(getattr(event, "message_obj", None), "raw_message", "")
+            ).strip()
+        if not message_text:
+            self._log(
+                "info",
+                f"[agentic_memory] Empty message text in group {group_id}, skip processing.",
+            )
             return
 
         sender_name = str(event.get_sender_name()).strip() or "Unknown"
+        self._log_raw_event_debug(event, group_id, message_text)
         trigger_state = self._build_trigger_state(event, message_text)
+        self._log(
+            "info",
+            "[agentic_memory] Received group message. "
+            f"group={group_id}, sender={sender_name}, mentioned={trigger_state['is_mentioned']}, "
+            f"name_hit={trigger_state['name_hit']}, question_hit={trigger_state['question_pattern_hit']}, "
+            f"text={message_text[:120]}",
+        )
 
         self._append_message(group_id, sender_name, message_text, trigger_state)
         long_window_batch = self._pop_long_window_batch(group_id)
@@ -1078,6 +1338,10 @@ class AgenticMemoryPlugin(Star):
             "immediate",
             self.immediate_cooldown_seconds,
         ):
+            self._log(
+                "info",
+                f"[agentic_memory] Immediate reply triggered in group {group_id}.",
+            )
             recent_context = self.message_buffers[group_id][
                 -self.immediate_context_messages :
             ]
@@ -1097,12 +1361,25 @@ class AgenticMemoryPlugin(Star):
             if sent:
                 self._stop_event_flow(event)
                 return
+            self._log(
+                "warning",
+                f"[agentic_memory] Immediate reply trigger fired but message was not sent. group={group_id}",
+            )
+        elif should_reply_immediately:
+            self._log(
+                "info",
+                f"[agentic_memory] Immediate reply was blocked by cooldown. group={group_id}",
+            )
 
         if self._should_trigger_short_window(group_id) and self._is_cooldown_ready(
             group_id,
             "short_window",
             self.short_window_cooldown_seconds,
         ):
+            self._log(
+                "info",
+                f"[agentic_memory] Short-window reply triggered in group {group_id}.",
+            )
             recent_context = self.message_buffers[group_id][
                 -self.immediate_context_messages :
             ]
@@ -1121,6 +1398,11 @@ class AgenticMemoryPlugin(Star):
             )
             if sent:
                 self._stop_event_flow(event)
+            else:
+                self._log(
+                    "warning",
+                    f"[agentic_memory] Short-window trigger fired but message was not sent. group={group_id}",
+                )
 
     async def _call_compression_text(self, prompt: str) -> str:
         """Call the compression role for memory folding tasks.
@@ -1193,7 +1475,7 @@ class AgenticMemoryPlugin(Star):
 
         self.db.add_summary(group_id, "daily", daily_summary)
         self.db.delete_summaries(group_id, "paragraph", before_time=before_time)
-        logger.info(f"Daily memory compression finished for group {group_id}")
+        self._log("info", f"Daily memory compression finished for group {group_id}")
 
     async def _compress_history_memory(self, group_id: str, before_time: str) -> None:
         """Compress old daily summaries into long-term history memory.
@@ -1228,7 +1510,7 @@ class AgenticMemoryPlugin(Star):
 
         self.db.add_summary(group_id, "history", history_summary)
         self.db.delete_summaries(group_id, "daily", before_time=before_time)
-        logger.info(f"History memory compression finished for group {group_id}")
+        self._log("info", f"History memory compression finished for group {group_id}")
 
     async def _cron_daily_compression(self) -> None:
         """Run scheduled daily and monthly memory compression in the background."""
@@ -1239,7 +1521,8 @@ class AgenticMemoryPlugin(Star):
                 next_run += timedelta(days=1)
 
             wait_seconds = max(1, int((next_run - now).total_seconds()))
-            logger.info(
+            self._log(
+                "info",
                 f"Memory compression is sleeping for {wait_seconds / 3600:.2f} hours.",
             )
             await asyncio.sleep(wait_seconds)
@@ -1274,4 +1557,4 @@ class AgenticMemoryPlugin(Star):
                     if datetime.now().day == 1:
                         await self._compress_history_memory(group_id, daily_cutoff)
             except Exception as exc:
-                logger.error(f"Scheduled memory compression failed: {exc}")
+                self._log("error", f"Scheduled memory compression failed: {exc}")

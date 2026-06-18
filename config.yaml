@@ -32,15 +32,11 @@ plugin_settings:
 group_scope:
   # 是否启用群聊范围限制。
   # true  = 只在 group_whitelist 中列出的群运行
-  # false = 所有群都运行（不推荐，建议先小范围测试）
+  # false = 所有群都运行（排查回复问题时建议先关闭）
   enabled: true
 
   # 允许生效的群号白名单。
-  # 填字符串列表，例如：
-  # group_whitelist:
-  #   - "123456"
-  #   - "987654"
-  # 留空列表 [] 且 enabled=true 时，插件不会在任何群里生效。
+  # 当 enabled=false 时，这里仅作为记录，不参与拦截。
   group_whitelist: ['966648392', '157903619']
 
 skill_settings:
@@ -84,16 +80,12 @@ message_reaction_settings:
   immediate_summary_count: 5
 
   # 即时回复冷却时间（秒）。
-  # 作用：避免短时间被多人连续 @ 时每条都回，显得像“秒回机器”。
-  # 设为 0 表示不冷却。
-  # 推荐范围：12~30
-  immediate_cooldown_seconds: 5
+  # 排查时设为 0，确保每次直接触发都能立即进入回复流程。
+  immediate_cooldown_seconds: 0
 
   # 主动插话冷却时间（秒）。
-  # 作用：限制“机器人自己接话”的频率。
-  # 设得更高会更像真人潜水型群友。
-  # 推荐范围：300~1800
-  proactive_cooldown_seconds: 10
+  # 排查时设为 0，避免后台主动回复被冷却拦掉。
+  proactive_cooldown_seconds: 0
 
   # 是否启用“短窗口反应”。
   # 含义：最近若干条消息里频繁提到机器人，就算没人直接 @，也可以顺势说一句。
@@ -120,9 +112,8 @@ message_reaction_settings:
   short_window_question_hit_min_count: 1
 
   # 短窗口接话冷却时间（秒）。
-  # 避免群里持续讨论它时每隔几句就插嘴。
-  # 推荐范围：120~600
-  short_window_cooldown_seconds: 10
+  # 排查时设为 0，避免短窗口逻辑被冷却拦掉。
+  short_window_cooldown_seconds: 0
 
 memory_settings:
   # 长期记忆分析触发阈值。
@@ -260,8 +251,8 @@ reply_dedup:
 
 special_replies:
   # 是否启用“固定短回复规则”。
-  # 适合用于一些很稳定、很像真人条件反射的回答。
-  enabled: true
+  # 排查即时回复问题时先关闭，避免它抢先命中掩盖真实触发链路。
+  enabled: false
 
   rules:
     # 规则示例 1：别人问“怎么还不睡”
@@ -342,6 +333,26 @@ proactive_talk_settings:
   # 主动开话题总冷却时间（秒）。
   cooldown_seconds: 21600
 
+logging_settings:
+  # 是否把插件关键日志额外写入插件自己的日志文件。
+  # true  = 平台日志 + 插件文件日志双写
+  # false = 仅输出到平台日志
+  file_logging_enabled: true
+
+  # 插件私有日志文件路径。
+  # 相对路径会自动写入 AstrBot 的 plugin_data 目录。
+  log_file_path: "astrbot_plugin_01/agentic_memory_plugin.log"
+
+  # 是否记录群消息事件的原始结构调试日志。
+  # 排查 @ 识别失败时建议临时开启。
+  raw_event_debug_enabled: false
+
+  # 原始结构日志里是否包含消息链各 segment 详情。
+  raw_event_message_chain_enabled: true
+
+  # 单条原始调试日志最多保留多少字符，防止刷爆日志文件。
+  raw_event_max_chars: 4000
+
 llm_settings:
   # LLM 路由模式：
   # - "astrbot_default" = 所有角色都走 AstrBot 当前默认 provider
@@ -349,9 +360,8 @@ llm_settings:
   mode: "plugin_router"
 
   # 当 plugin_router 调用失败时，是否自动回退到 AstrBot 默认 provider。
-  # true  = 更稳
-  # false = 更严格，失败就直接报错
-  fallback_to_astrbot_default: false
+  # 排查时建议开启，避免路由配置问题让“明明触发了却没回”。
+  fallback_to_astrbot_default: true
 
   roles:
     # 角色：chat
