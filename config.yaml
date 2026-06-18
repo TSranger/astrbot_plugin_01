@@ -1,27 +1,444 @@
-# ==========================================
-# 智能体记忆插件全局配置文件 (config.yaml)
-# ==========================================
+# =========================
+# AstrBot Plugin 01 配置说明
+# =========================
+# 这份配置只作用于 astrbot_plugin_01 插件。
+# 所有新增注释均为说明用途，不影响 YAML 解析。
+#
+# 设计目标：
+# 1. 被 @ 或被点名时能立即回应，而不是依赖 buffer_threshold。
+# 2. 群友连续聊到它时，也能像真人一样适度插一句。
+# 3. “说话 / 分析 / 总结 / 合并记忆”可以走不同模型。
+#
+# 常见布尔值：
+# - true  = 开启
+# - false = 关闭
+#
+# 常见 scope / mode 可选值：
+# - llm_settings.mode:
+#   - "astrbot_default" = 全部继续使用 AstrBot 当前默认 provider
+#   - "plugin_router"   = 本插件内部按角色分别调用不同 OpenAI-compatible 模型
+# - special_replies.rules[].trigger_mode:
+#   - "any"              = 只要规则命中就可触发
+#   - "direct_wake_only" = 只有被 @ / 被点名 / 被点名问话时才触发
+# - special_replies.rules[].scope:
+#   - "whitelist_only" = 仅对白名单群生效
+#   - "all_groups"     = 对插件实际生效的所有群都可触发
 
-memory_settings:
-  # --- 滑动窗口与频率控制 ---
-  buffer_threshold: 5         # 满多少条消息触发一次大模型后台总结
-  overlap_count: 1            # 窗口滑动保留条数（例如满50条时，保留最后10条到下一轮，防止对话断层）
-  
-  # --- 概率控制（0.0 ~ 1.0） ---
-  base_interject_probability: 1.0   # 小事随缘的插话概率 (15%)
-  boost_interject_probability: 1.0  # 命中了技能设定(兴趣)时的强化插话概率 (60%)
-  
-  # --- 记忆边界控制 ---
-  max_dynamic_events: 10       # 每个群友最多保留的动态事件条数（超过则触发滚动压缩）
-  
-  # --- 存储路径 ---
-  memory_db_path: "data/agentic_memory.db" # SQLite 数据库的本地存放路径
+plugin_settings:
+  # 是否启用整个插件。
+  # 可选值：true / false
+  enabled: true
+
+group_scope:
+  # 是否启用群聊范围限制。
+  # true  = 只在 group_whitelist 中列出的群运行
+  # false = 所有群都运行（不推荐，建议先小范围测试）
+  enabled: true
+
+  # 允许生效的群号白名单。
+  # 填字符串列表，例如：
+  # group_whitelist:
+  #   - "123456"
+  #   - "987654"
+  # 留空列表 [] 且 enabled=true 时，插件不会在任何群里生效。
+  group_whitelist: ['966648392', '157903619']
 
 skill_settings:
-  # --- 身份与唤醒 ---
-  active_skill_file: "skills/漫游时空.skill/漫游时空.md"  # 当前挂载的系统提示词(人设)文件
-  bot_names:                   # 机器人的名字列表，群友提到这些词会强制触发回复
-    - "小号"
+  # 当前使用的人设 / 技能文件路径。
+  # 可填：
+  # - 插件目录下的相对路径
+  # - 绝对路径
+  # 这个文件通常决定机器人的角色口吻、背景设定、世界观。
+  active_skill_file: "skills/漫游时空.skill/漫游时空.md"
+
+  # 机器人在群里可能被人提到的名字列表。
+  # 只要消息里出现其中任意一个名字，就会被视作“被点名”。
+  # 建议填：
+  # - 常用昵称
+  # - 正式名字
+  # - 容易被群友叫的简称
+  bot_names:
+    # - "小号"
     - "漫舞时空"
     - "漫游时空"
-    # - "派蒙"
+
+  # “直接唤醒问句”的正则表达式列表。
+  # 用于识别：虽然没 @，但明显是在问机器人。
+  # 每个元素都是 Python 正则表达式。
+  # 常见写法：
+  # - 带 (?i) 表示忽略大小写
+  # - 可自行加入更多口语问法
+  direct_wake_question_patterns:
+    - "(?i).*(小号|漫舞时空|漫游时空).*(吗|呢|怎么|为什么|咋|啥|什么|会不会|是不是).*"
+    - "(?i).*(问|问下|想问).*(小号|漫舞时空|漫游时空).*"
+
+message_reaction_settings:
+  # 被 @ / 被点名 / 被直接问话时，取最近多少条消息作为即时回复上下文。
+  # 数值越大，上下文越完整；越小，回复越直接。
+  # 推荐范围：6~15
+  immediate_context_messages: 10
+
+  # 即时回复时，额外参考最近多少条 paragraph summary（段落摘要）。
+  # 这些摘要来自长期记忆压缩结果。
+  # 推荐范围：2~5
+  immediate_summary_count: 5
+
+  # 即时回复冷却时间（秒）。
+  # 作用：避免短时间被多人连续 @ 时每条都回，显得像“秒回机器”。
+  # 设为 0 表示不冷却。
+  # 推荐范围：12~30
+  immediate_cooldown_seconds: 5
+
+  # 主动插话冷却时间（秒）。
+  # 作用：限制“机器人自己接话”的频率。
+  # 设得更高会更像真人潜水型群友。
+  # 推荐范围：300~1800
+  proactive_cooldown_seconds: 10
+
+  # 是否启用“短窗口反应”。
+  # 含义：最近若干条消息里频繁提到机器人，就算没人直接 @，也可以顺势说一句。
+  # 可选值：true / false
+  short_window_enabled: true
+
+  # 短窗口统计的消息条数。
+  # 例如设为 8，表示检查最近 8 条消息里是否反复提到机器人。
+  # 推荐范围：5~10
+  short_window_size: 5
+
+  # 最近 short_window_size 条消息中，至少出现多少次“名字命中”才触发短窗口接话。
+  # 设高一点会更稳，减少“太爱刷存在感”。
+  # 推荐范围：2~4
+  short_window_name_hit_min_count: 3
+
+  # 最近 short_window_size 条消息中，至少出现多少次真正 @ 才触发短窗口接话。
+  # 通常 1 就够，因为有人 @ 本身已是强信号。
+  # 推荐范围：1~2
+  short_window_mention_hit_min_count: 1
+
+  # 最近 short_window_size 条消息中，至少多少次“被点名问话”才触发。
+  # 推荐范围：1~3
+  short_window_question_hit_min_count: 1
+
+  # 短窗口接话冷却时间（秒）。
+  # 避免群里持续讨论它时每隔几句就插嘴。
+  # 推荐范围：120~600
+  short_window_cooldown_seconds: 10
+
+memory_settings:
+  # 长期记忆分析触发阈值。
+  # 当缓存消息数达到这个值时，会触发一次“分析 / 总结 / 记忆更新 / 潜在插话点提炼”。
+  # 注意：它现在不再控制“被 @ 后是否立即说话”。
+  # 推荐范围：8~20
+  buffer_threshold: 12
+
+  # 每次长窗口处理后，保留多少条重叠消息进入下一轮。
+  # 作用：避免上下文割裂。
+  # 推荐范围：2~5
+  overlap_count: 3
+
+  # 每个用户最多保留多少条动态事件记忆。
+  # 超过后会触发旧事件压缩合并。
+  # 推荐范围：6~20
+  max_dynamic_events: 10
+
+  # 合并旧动态事件时，目标短句长度（字数）。
+  # 值越小，长期记忆越简洁；值越大，保留细节越多。
+  # 推荐范围：12~30
+  dynamic_event_merge_target_length: 18
+
+  # 主动插话时，会取最近多少条消息作为上下文。
+  # 推荐范围：8~16
+  recent_context_messages_for_interject: 10
+
+  # 记忆数据库路径。
+  # 可填：
+  # - 相对路径：会自动落到 AstrBot 的 plugin_data 目录下
+  # - 绝对路径：直接使用指定路径
+  memory_db_path: "astrbot_plugin_01/agentic_memory.db"
+
+probability_settings:
+  # 普通情况下主动插话的基础概率。
+  # 只影响“长窗口分析后，机器人想不想主动接一句”。
+  # 越低越像低存在感群友。
+  # 推荐范围：0.03~0.15
+  base_interject_probability: 1.0
+
+  # 当当前话题和角色偏好更匹配时，主动插话概率提升到多少。
+  # 推荐范围：0.15~0.40
+  boost_interject_probability: 1.0
+
+summary_settings:
+  # 段落摘要压成日摘要时，每批处理多少条 paragraph summary。
+  # 推荐范围：5~20
+  daily_chunk_size: 10
+
+  # 每个中间摘要的最大字数。
+  # 推荐范围：60~150
+  daily_chunk_summary_max_chars: 100
+
+  # 每日总结最大字数。
+  # 推荐范围：100~250
+  daily_summary_max_chars: 150
+
+  # 历史长期总结最大字数。
+  # 推荐范围：150~300
+  history_summary_max_chars: 400
+
+  # 历史压缩时，最多喂给模型多少字符。
+  # 推荐范围：1000~6000
+  history_input_char_limit: 3000
+
+  # paragraph summary 保留多少天再压成 daily summary。
+  # 推荐范围：1~7
+  paragraph_retention_days: 2
+
+  # daily summary 保留多少天再进一步压成 history。
+  # 推荐范围：90~365
+  daily_retention_days: 365
+
+prompt_settings:
+  # 在分析模型提示词里，最多截取多少人设文本用于辅助理解角色。
+  # 数值太大会增加 token 消耗。
+  # 推荐范围：300~1500
+  analysis_skill_excerpt_chars: 800
+
+  # 通用回复风格说明。
+  # 会作为所有聊天回复的基础风格要求。
+  # 建议写成“你希望它像什么样的人说话”。
+  chat_reply_style: "像群里熟人，不要客服腔，不要自我介绍；优先一句短回复，必要时两句；少用感叹号，不要每次都接满。"
+
+  # 每次回复最多几句。
+  # 推荐值：
+  # - 1 = 极简、像高冷群友
+  # - 2 = 比较自然，推荐
+  # - 3 = 偶尔展开
+  chat_reply_max_sentences: 2
+
+  # 当记忆不足时，允许模型参考的“自然遗忘型”说法。
+  # 不建议太正式。
+  fallback_memory_reply: "忘了。"
+
+  # 被 @ / 被点名时的专用风格补充。
+  # 建议：直接回答，不绕弯，不讲大道理。
+  immediate_reply_style: "如果别人是在直接问你，就先正面回答，再决定要不要顺手补半句。"
+
+  # 群友连续聊到它时的专用风格补充。
+  # 建议：像路过接一句，不要像突然开演讲。
+  short_window_reply_style: "如果只是大家连续提到你，就像路过被 cue 到一样接一句，轻一点、自然一点。"
+
+  # 主动插话时的专用风格补充。
+  # 建议：少发言、少抢戏、少总结别人。
+  proactive_reply_style: "主动接话时要克制，像潜水群友偶尔冒泡，不要强行总结全场。"
+
+  # 尽量避免的表达习惯。
+  # 这是纯提示词约束，不是硬规则。
+  avoid_phrases:
+    - "作为"
+    - "根据你的描述"
+    - "我认为"
+    - "总的来说"
+    - "哈哈哈哈"
+    - "你好"
+    - "您好"
+
+reply_dedup:
+  # 是否启用回复去重。
+  # 作用：避免近几次回复过于雷同。
+  enabled: false
+
+  # 去重窗口大小：记住最近多少条自己的回复用于比较。
+  # 推荐范围：5~15
+  window_size: 8
+
+  # 是否只对主动插话启用去重。
+  # true  = 只约束 proactive
+  # false = 即时回复、短窗口回复等也会参与去重
+  only_proactive: true
+
+  # 命中重复时，是否允许模型重试一次，换种说法。
+  retry_once_on_duplicate: true
+
+special_replies:
+  # 是否启用“固定短回复规则”。
+  # 适合用于一些很稳定、很像真人条件反射的回答。
+  enabled: true
+
+  rules:
+    # 规则示例 1：别人问“怎么还不睡”
+    - rule_id: "late_sleep"
+      # 是否启用该条规则。
+      enabled: true
+
+      # 优先级，越大越先匹配。
+      priority: 100
+
+      # 触发模式：
+      # - "any"
+      # - "direct_wake_only"
+      trigger_mode: "direct_wake_only"
+
+      # 正则匹配列表，只要任意一条命中即可。
+      patterns:
+        - "(怎么|为什么).*(还不睡|还没睡)"
+        - "(还不睡|还没睡).*(怎么|为什么)"
+
+      # 候选回复列表，命中后随机选择其一。
+      candidate_replies:
+        - "失眠了。"
+        - "睡不着。"
+        # - "还没困。"
+
+      # 是否必须满足对应条件才允许触发。
+      required_mention: false
+      required_name_hit: false
+      required_question_mark: false
+
+      # 该条规则的独立冷却时间（秒）。
+      cooldown_seconds: 180
+
+      # 适用范围：
+      # - "whitelist_only"
+      # - "all_groups"
+      scope: "whitelist_only"
+
+    # 规则示例 2：别人问“周边买不买”
+    - rule_id: "merch_buy"
+      enabled: true
+      priority: 90
+      trigger_mode: "direct_wake_only"
+      patterns:
+        - "(买不买|要不要买|值得买吗).*(周边|谷子|立牌|吧唧|手办|娃)"
+        - "(周边|谷子|立牌|吧唧|手办|娃).*(买不买|要不要买|值得买吗)"
+      candidate_replies:
+        - "买。"
+        - "这还用问，买。"
+        - "想买就别忍。"
+      required_mention: false
+      required_name_hit: false
+      required_question_mark: false
+      cooldown_seconds: 180
+      scope: "whitelist_only"
+
+proactive_talk_settings:
+  # 预留配置：是否启用定时主动开话题。
+  # 当前主逻辑里还没有真正消费这组配置；
+  # 现在主要是给未来扩展留接口。
+  enabled: false
+
+  # 允许主动开口的时间段列表，格式固定为 "HH:MM-HH:MM"
+  # 例如：
+  # - "10:30-11:30"
+  # - "20:00-22:00"
+  time_windows:
+    - "10:30-11:30"
+
+  # 可主动抛出的候选话题。
+  candidate_topics:
+    - "中午吃啥？"
+
+  # 每个群每天最多主动触发几次。
+  max_triggers_per_group_per_day: 1
+
+  # 主动开话题总冷却时间（秒）。
+  cooldown_seconds: 21600
+
+llm_settings:
+  # LLM 路由模式：
+  # - "astrbot_default" = 所有角色都走 AstrBot 当前默认 provider
+  # - "plugin_router"   = 本插件内部按角色分别走不同 OpenAI-compatible 模型
+  mode: "plugin_router"
+
+  # 当 plugin_router 调用失败时，是否自动回退到 AstrBot 默认 provider。
+  # true  = 更稳
+  # false = 更严格，失败就直接报错
+  fallback_to_astrbot_default: false
+
+  roles:
+    # 角色：chat
+    # 用途：真正发到群里的说话内容。
+    chat:
+      # 只有在 llm_settings.mode="plugin_router" 时，这个 enabled 才有意义。
+      enabled: true
+
+      # 当前仅支持 "openai_compatible"
+      provider_type: "openai_compatible"
+
+      # 接口基础地址。
+      # 可填：
+      # - "https://xxx/v1"
+      # - "https://xxx/v1/chat/completions"
+      # 插件会自动兼容补全。
+      base_url: "https://api.deepseek.com"
+
+      # API Key。留空表示不带 Authorization Bearer。
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+
+      # 模型名，例如：
+      # - "gpt-4o-mini"
+      # - "deepseek-chat"
+      # - "qwen-plus"
+      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+
+      # 温度。越高越活泼、越容易发散。
+      # chat 推荐范围：0.7~1.0
+      temperature: 0.85
+
+      # top_p 采样参数。
+      # 一般 0.8~1.0 即可。
+      top_p: 0.9
+
+      # 最大输出 token。
+      max_tokens: 192
+
+      # 请求超时秒数。
+      timeout_seconds: 60
+
+      # 额外请求头，通常留空即可。
+      # 例如：
+      # extra_headers:
+      #   X-Api-Version: "2024-01"
+      extra_headers: {}
+
+    # 角色：analysis
+    # 用途：分析聊天内容、输出结构化 JSON、提取记忆更新与可插话点。
+    analysis:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://api.deepseek.com"
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+
+      # analysis 需要稳定、克制、结构化，温度建议较低。
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 768
+      timeout_seconds: 90
+      extra_headers: {}
+
+    # 角色：compression
+    # 用途：压缩段落摘要 / 日总结 / 历史总结。
+    compression:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://api.deepseek.com"
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 512
+      timeout_seconds: 90
+      extra_headers: {}
+
+    # 角色：event_merge
+    # 用途：把旧动态事件压缩成一句短记忆。
+    event_merge:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://api.deepseek.com"
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 128
+      timeout_seconds: 60
+      extra_headers: {}
