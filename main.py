@@ -330,21 +330,94 @@ class AgenticMemoryPlugin(Star):
         """
         if hasattr(event, "is_at") and getattr(event, "is_at"):
             return True
+
+        bot_id = str(event.get_self_id()).strip()
+        if not bot_id:
+            return False
+
         try:
             message_chain = event.get_messages()
-            bot_id = str(event.get_self_id())
             for segment in message_chain:
-                if getattr(segment, "type", "") != "At":
+                segment_type = str(getattr(segment, "type", "")).strip().lower()
+                if segment_type != "at":
                     continue
+
+                segment_qq = getattr(segment, "qq", None)
+                if segment_qq is not None and str(segment_qq).strip() == bot_id:
+                    return True
+
                 segment_data = getattr(segment, "data", None)
                 if (
                     isinstance(segment_data, dict)
-                    and str(segment_data.get("qq", "")) == bot_id
+                    and str(segment_data.get("qq", "")).strip() == bot_id
+                ):
+                    return True
+
+                segment_dict = None
+                to_dict = getattr(segment, "toDict", None)
+                if callable(to_dict):
+                    try:
+                        segment_dict = to_dict()
+                    except Exception:
+                        segment_dict = None
+                if (
+                    isinstance(segment_dict, dict)
+                    and str(segment_dict.get("data", {}).get("qq", "")).strip()
+                    == bot_id
                 ):
                     return True
         except Exception as exc:
             logger.debug(f"Failed to inspect message chain mentions: {exc}")
-        return False
+
+        message_text = str(getattr(event, "message_str", "")).strip()
+        return f"@{bot_id}" in message_text if message_text else False
+
+    def _sanitize_reply_text(self, text: str) -> str:
+        """Clean model output before sending it to the group.
+
+        Args:
+            text: Raw generated reply text.
+
+        Returns:
+            Sanitized reply text.
+        """
+        cleaned = str(text).strip()
+        if not cleaned:
+            return ""
+
+        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+        cleaned = re.sub(
+            r"^(reply|response|answer|output|最终回复|回复|回答|输出)\s*[:：]\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        wrappers = [
+            ('"', '"'),
+            ("'", "'"),
+            ("“", "”"),
+            ("‘", "’"),
+            ("「", "」"),
+            ("『", "』"),
+            ("《", "》"),
+            ("【", "】"),
+            ("[", "]"),
+            ("(", ")"),
+            ("{", "}"),
+        ]
+        changed = True
+        while cleaned and changed:
+            changed = False
+            for left, right in wrappers:
+                if cleaned.startswith(left) and cleaned.endswith(right):
+                    inner = cleaned[len(left) : len(cleaned) - len(right)].strip()
+                    if inner:
+                        cleaned = inner
+                        changed = True
+
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     def _build_trigger_state(
         self,
@@ -571,7 +644,8 @@ class AgenticMemoryPlugin(Star):
         Returns:
             ``True`` when the message was sent successfully.
         """
-        if not reply_text.strip():
+        reply_text = self._sanitize_reply_text(reply_text)
+        if not reply_text:
             return False
         if self._is_duplicate_reply(group_id, reply_text, channel):
             logger.info(f"Skipped duplicated reply in group {group_id}: {reply_text}")
@@ -733,7 +807,7 @@ class AgenticMemoryPlugin(Star):
             prompt=prompt,
             system_prompt=self.skill_content,
         )
-        reply_text = reply_text.strip()
+        reply_text = self._sanitize_reply_text(reply_text)
 
         if (
             reply_text
@@ -746,7 +820,7 @@ class AgenticMemoryPlugin(Star):
                 prompt=retry_prompt,
                 system_prompt=self.skill_content,
             )
-            return retry_text.strip()
+            return self._sanitize_reply_text(retry_text)
 
         return reply_text
 
@@ -822,7 +896,7 @@ class AgenticMemoryPlugin(Star):
                 prompt=prompt,
                 system_prompt="You compress old memory events into one short sentence.",
             )
-            merged = merged.strip()
+            merged = self._sanitize_reply_text(merged)
             return merged or f"{event_one}；{event_two}"
         except Exception as exc:
             logger.error(f"Failed to merge dynamic events: {exc}")
@@ -1057,13 +1131,13 @@ class AgenticMemoryPlugin(Star):
         Returns:
             Compressed text result.
         """
-        return (
+        return self._sanitize_reply_text(
             await self.router.text_chat(
                 role="compression",
                 prompt=prompt,
                 system_prompt="You compress long chat memory into concise summaries.",
             )
-        ).strip()
+        )
 
     async def _compress_daily_memory(self, group_id: str, before_time: str) -> None:
         """Compress paragraph summaries into a daily summary.
