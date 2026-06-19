@@ -45,7 +45,7 @@ skill_settings:
   # - 插件目录下的相对路径
   # - 绝对路径
   # 这个文件通常决定机器人的角色口吻、背景设定、世界观。
-  active_skill_file: "skills/漫游时空.skill/漫游时空.md"
+  active_skill_file: "skills/漫游时空.skill/SKILL.md"
 
   # 机器人在群里可能被人提到的名字列表。
   # 只要消息里出现其中任意一个名字，就会被视作“被点名”。
@@ -57,6 +57,7 @@ skill_settings:
     # - "小号"
     # - "漫舞时空"
     - "漫游时空"
+    # - "派蒙"
 
   # “直接唤醒问句”的正则表达式列表。
   # 用于识别：虽然没 @，但明显是在问机器人。
@@ -100,7 +101,7 @@ message_reaction_settings:
   # 最近 short_window_size 条消息中，至少出现多少次“名字命中”才触发短窗口接话。
   # 设高一点会更稳，减少“太爱刷存在感”。
   # 推荐范围：2~4
-  short_window_name_hit_min_count: 3
+  short_window_name_hit_min_count: 2
 
   # 最近 short_window_size 条消息中，至少出现多少次真正 @ 才触发短窗口接话。
   # 通常 1 就够，因为有人 @ 本身已是强信号。
@@ -113,7 +114,7 @@ message_reaction_settings:
 
   # 短窗口接话冷却时间（秒）。
   # 排查时设为 0，避免短窗口逻辑被冷却拦掉。
-  short_window_cooldown_seconds: 0
+  short_window_cooldown_seconds: 5
 
 memory_settings:
   # 长期记忆分析触发阈值。
@@ -412,25 +413,25 @@ proactive_talk_settings:
   # 可配置多个独立任务。
   # 每个任务每天最多执行一次。
   tasks:
-    # 示例 1：固定时间
-    - task_id: "night_champion"
-      enabled: true
+    # # 示例 1：固定时间
+    # - task_id: "night_champion"
+    #   enabled: true
 
-      # 固定触发时间，格式必须是 "HH:MM"
-      time: "05:00"
+    #   # 固定触发时间，格式必须是 "HH:MM"
+    #   time: "05:00"
 
-      # 该任务自己的额外冷却时间（秒）。
-      # 只限制同一个 task_id 在同一群里的再次发送。
-      cooldown_seconds: 0
+    #   # 该任务自己的额外冷却时间（秒）。
+    #   # 只限制同一个 task_id 在同一群里的再次发送。
+    #   cooldown_seconds: 0
 
-      # 可选：只让这条任务发到指定群。
-      # 不写则使用 default_group_ids。
-      # group_ids:
-      #   - "966648392"
+    #   # 可选：只让这条任务发到指定群。
+    #   # 不写则使用 default_group_ids。
+    #   # group_ids:
+    #   #   - "966648392"
 
-      # 候选说话内容，可写一个或多个，命中时随机选一条。
-      messages:
-        - "我就是熬夜冠军！"
+    #   # 候选说话内容，可写一个或多个，命中时随机选一条。
+    #   messages:
+    #     - "我就是熬夜冠军！"
 
     # 示例 2：随机时间范围
     - task_id: "lunch_question"
@@ -446,7 +447,20 @@ proactive_talk_settings:
 
       messages:
         - "中午吃啥？"
-        - "一会儿吃啥？"
+        # - "一会儿吃啥？"
+
+    - task_id: "night_champion"
+      enabled: true
+
+      # 随机范围模式：
+      time_range_start: "05:00"
+      time_range_end: "05:50"
+
+      cooldown_seconds: 0
+
+      messages:
+        - "我就是熬夜冠军！"
+        # - "一会儿吃啥？"
 
     # 示例 3：给单独群的固定提醒
     # - task_id: "afternoon_tea"
@@ -462,7 +476,8 @@ logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。
   # true  = 平台日志 + 插件文件日志双写
   # false = 仅输出到平台日志
-  file_logging_enabled: true
+  # file_logging_enabled: true
+  file_logging_enabled: false
 
   # 插件私有日志文件路径。
   # 相对路径会自动写入 AstrBot 的 plugin_data 目录。

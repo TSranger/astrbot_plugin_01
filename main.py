@@ -126,6 +126,10 @@ class AgenticMemoryPlugin(Star):
             0,
             int(self.reaction_settings.get("short_window_cooldown_seconds", 120)),
         )
+        self.short_window_max_age_seconds = max(
+            1,
+            int(self.reaction_settings.get("short_window_max_age_seconds", 180)),
+        )
 
         self.base_interject_probability = float(
             self.probability_settings.get("base_interject_probability", 0.15),
@@ -840,6 +844,221 @@ class AgenticMemoryPlugin(Star):
         self.message_buffers[group_id].append(message_item)
         self._get_short_window(group_id).append(message_item)
 
+    def _prune_short_window(self, group_id: str) -> None:
+        """Drop expired short-window messages before trigger evaluation.
+
+        Args:
+            group_id: Group identifier.
+        """
+        window = self._get_short_window(group_id)
+        if not window:
+            return
+
+        cutoff = datetime.now() - timedelta(seconds=self.short_window_max_age_seconds)
+        while window:
+            created_at = str(window[0].get("created_at", "")).strip()
+            if not created_at:
+                window.popleft()
+                continue
+            try:
+                created_at_dt = datetime.fromisoformat(created_at)
+            except ValueError:
+                window.popleft()
+                continue
+            if created_at_dt >= cutoff:
+                break
+            window.popleft()
+
+    def _is_identity_topic(self, text: str) -> bool:
+        """Check whether text is mainly asking about the bot identity.
+
+        Args:
+            text: Topic or message text.
+
+        Returns:
+            ``True`` when the text is an identity or self-introduction topic.
+        """
+        normalized = str(text).strip().lower()
+        if not normalized:
+            return False
+
+        identity_patterns = (
+            r"你是谁",
+            r"你哪位",
+            r"你谁啊",
+            r"你叫啥",
+            r"你叫什么",
+            r"你叫什么名字",
+            r"你是哪个",
+            r"你是干嘛的",
+            r"自我介绍",
+            r"介绍一下你自己",
+            r"who are you",
+            r"what are you",
+        )
+        return any(
+            re.search(pattern, normalized, flags=re.IGNORECASE)
+            for pattern in identity_patterns
+        )
+
+    def _is_weak_followup_message(self, text: str) -> bool:
+        """Check whether one message mainly relies on previous context.
+
+        Args:
+            text: Message text to inspect.
+
+        Returns:
+            ``True`` when the message is a short continuation such as ``你呢``.
+        """
+        normalized = re.sub(r"\s+", "", str(text)).strip("，。！？,.!?；;：:~～-")
+        if not normalized:
+            return True
+        if self._is_identity_topic(normalized):
+            return False
+
+        if len(normalized) <= 2:
+            return True
+
+        weak_exact_patterns = (
+            r"^你[呢捏哈和啊呀]?$",
+            r"^你看(咋样|怎么样|如何|呢)$",
+            r"^(咋样|怎么样|如何)$",
+            r"^(然后呢|还有呢|后来呢)$",
+            r"^(行吗|行不行|可以吗|可不可以|对吧|是吧)$",
+            r"^整点.?啥好的$",
+            r"^(好喝|好喝的很啊|好吃|挺好|还行|不错)$",
+        )
+        if any(
+            re.search(pattern, normalized, flags=re.IGNORECASE)
+            for pattern in weak_exact_patterns
+        ):
+            return True
+
+        weak_tail_patterns = (
+            r"(你呢|咋样|怎么样|如何|行吗|行不行|可以吗|可不可以|对吧|是吧)$",
+            r"(然后呢|还有呢|后来呢)$",
+        )
+        return len(normalized) <= 8 and any(
+            re.search(pattern, normalized, flags=re.IGNORECASE)
+            for pattern in weak_tail_patterns
+        )
+
+    def _resolve_reply_focus(
+        self,
+        topic: str,
+        recent_context: list[dict[str, Any]],
+        channel: str,
+    ) -> tuple[str, list[dict[str, Any]], str]:
+        """Resolve the actual reply focus from the latest topic and context.
+
+        Args:
+            topic: Raw topic passed into the reply builder.
+            recent_context: Recent context messages.
+            channel: Reply channel.
+
+        Returns:
+            Tuple of effective topic, focused context slice, and a focus note.
+        """
+        raw_topic = str(topic).strip()
+        if channel == "proactive":
+            return (
+                raw_topic or "顺着大家刚刚的话题自然接一句。",
+                recent_context,
+                "Use the planned proactive topic directly.",
+            )
+
+        latest_index = -1
+        latest_message = ""
+        for index in range(len(recent_context) - 1, -1, -1):
+            candidate = str(recent_context[index].get("msg", "")).strip()
+            if candidate:
+                latest_index = index
+                latest_message = candidate
+                break
+
+        if not latest_message:
+            return (
+                raw_topic or "顺着大家刚刚的话题自然接一句。",
+                recent_context,
+                "No latest context message was found, so use the raw trigger topic.",
+            )
+
+        if self._is_identity_topic(raw_topic) or self._is_identity_topic(
+            latest_message
+        ):
+            focused_context = (
+                recent_context[latest_index : latest_index + 1]
+                if latest_index >= 0
+                else recent_context
+            )
+            return (
+                latest_message,
+                focused_context,
+                "Current topic is an identity question, so answering identity is allowed.",
+            )
+
+        if not self._is_weak_followup_message(latest_message):
+            focused_context = (
+                recent_context[latest_index : latest_index + 1]
+                if latest_index >= 0
+                else recent_context
+            )
+            return (
+                latest_message,
+                focused_context,
+                "The latest message already states the current topic clearly.",
+            )
+
+        anchor_index = -1
+        anchor_message = ""
+        for index in range(latest_index - 1, -1, -1):
+            candidate = str(recent_context[index].get("msg", "")).strip()
+            if not candidate:
+                continue
+            if self._is_weak_followup_message(candidate):
+                continue
+            anchor_index = index
+            anchor_message = candidate
+            break
+
+        if anchor_index >= 0 and anchor_message:
+            return (
+                f"{anchor_message}（最新承接：{latest_message}）",
+                recent_context[anchor_index : latest_index + 1],
+                "The latest message is only a weak continuation. Use the anchor only to补全省略主语，不要把更早的旧话题重新捡回来。",
+            )
+
+        focused_context = (
+            recent_context[latest_index : latest_index + 1]
+            if latest_index >= 0
+            else recent_context
+        )
+        return (
+            latest_message,
+            focused_context,
+            "The latest message is short, but no stronger anchor was found. Reply lightly to the latest line only.",
+        )
+
+    def _build_short_window_topic(self, recent_context: list[dict[str, Any]]) -> str:
+        """Build a raw short-window topic from the latest live context.
+
+        Args:
+            recent_context: Recent context messages.
+
+        Returns:
+            Latest non-empty message text when available.
+        """
+        latest_message = ""
+        for item in reversed(recent_context):
+            candidate = str(item.get("msg", "")).strip()
+            if candidate:
+                latest_message = candidate
+                break
+
+        if not latest_message:
+            return "顺着大家刚刚的话题自然接一句。"
+        return latest_message
+
     def _pop_long_window_batch(self, group_id: str) -> list[dict[str, Any]] | None:
         """Pop a long-window batch when the configured threshold is reached.
 
@@ -951,6 +1170,7 @@ class AgenticMemoryPlugin(Star):
         """
         if not self.short_window_enabled:
             return False
+        self._prune_short_window(group_id)
         window = list(self._get_short_window(group_id))
         if len(window) < self.short_window_size:
             return False
@@ -2089,6 +2309,19 @@ class AgenticMemoryPlugin(Star):
         Returns:
             Generated reply text.
         """
+        effective_topic, focused_context, focus_note = self._resolve_reply_focus(
+            topic,
+            recent_context,
+            channel,
+        )
+        focus_context = focused_context or recent_context
+        self._log(
+            "info",
+            "[agentic_memory] Reply focus resolved. "
+            f"group={group_id}, channel={channel}, raw_topic={topic[:80]!r}, "
+            f"effective_topic={effective_topic[:80]!r}, focus_note={focus_note}",
+        )
+
         recent_summaries_rows = self.db.get_summaries(
             group_id,
             "paragraph",
@@ -2108,13 +2341,13 @@ class AgenticMemoryPlugin(Star):
 
         memory_recall_block = self._build_memory_recall_block(
             group_id,
-            topic,
-            recent_context,
+            effective_topic,
+            focus_context,
         )
 
         involved_users = []
         seen_users = set()
-        for item in recent_context:
+        for item in focus_context:
             sender = str(item.get("sender", "")).strip()
             if sender and sender not in seen_users:
                 seen_users.add(sender)
@@ -2138,7 +2371,10 @@ class AgenticMemoryPlugin(Star):
             else "【Related user memory】\n- None"
         )
 
-        context_str = "\n".join(
+        latest_context_str = "\n".join(
+            f"{item['sender']}: {item['msg']}" for item in focus_context
+        )
+        full_context_str = "\n".join(
             f"{item['sender']}: {item['msg']}" for item in recent_context
         )
         reply_style = str(
@@ -2193,9 +2429,13 @@ class AgenticMemoryPlugin(Star):
             f"{background_str}\n\n"
             f"{memory_recall_block}\n\n"
             f"{archives_str}\n\n"
-            f"【Latest context】\n{context_str}\n\n"
+            f"【Current reply focus】\n"
+            f"- Effective topic: {effective_topic}\n"
+            f"- Focus note: {focus_note}\n\n"
+            f"【Latest context to reply to】\n{latest_context_str or 'None'}\n\n"
+            f"【Earlier context for background only】\n{full_context_str or 'None'}\n\n"
             f"【Task】\n"
-            f"Trigger topic: {topic}\n"
+            f"Trigger topic: {effective_topic}\n"
             f"Reply as a casual group member.\n"
             f"Requirements:\n"
             f"1. {reply_style}\n"
@@ -2208,7 +2448,12 @@ class AgenticMemoryPlugin(Star):
             f"8. 如果引用旧记忆但不完全确定，要明确说“大概”“好像”“我记得那阵子”。\n"
             f"9. 先用已有记忆回答，不要编造数据库里没有的往事。\n"
             f"10. 如果问题明显在问过去发生过什么，优先把时间线和同期事件说成模糊回忆。\n"
-            f"11. Output reply only."
+            f"11. 只允许直接回应【Latest context to reply to】里的当前话题；【Earlier context for background only】只能帮助你补足省略主语或语气，不能决定你现在回答什么。\n"
+            f"12. 如果最新一两句已经切到新话题，就只接当前最后一句，不要因为前面有人问过‘你是谁’就继续自我介绍。\n"
+            f"13. 只有当当前触发 topic 本身就是身份问题时，才可以回答‘我是谁’；否则不要主动说‘我是xxx’‘你失忆了？’这类身份梗。\n"
+            f"14. short_window 渠道尤其要看最后一句的具体内容，不要把‘刚刚被提到过’误当成当前话题本身。\n"
+            f"15. 如果最后一句只是‘你呢’‘咋样’‘好喝吗’这种承接句，只能围绕 Current reply focus 补全它的省略对象，不能跳回更早、已经结束的话题。\n"
+            f"16. Output reply only."
         )
 
         try:
@@ -2228,8 +2473,8 @@ class AgenticMemoryPlugin(Star):
         if not reply_text:
             retry_prompt = (
                 f"{prompt}\n"
-                "12. You must output exactly one short natural Chinese reply only.\n"
-                "13. Do not output JSON, code fences, labels, quotes, brackets, or explanation."
+                "15. You must output exactly one short natural Chinese reply only.\n"
+                "16. Do not output JSON, code fences, labels, quotes, brackets, or explanation."
             )
             try:
                 retry_text = await self.router.text_chat(
@@ -2639,7 +2884,7 @@ class AgenticMemoryPlugin(Star):
             ]
             reply_text = await self._build_chat_reply(
                 group_id,
-                "最近群里好像一直在提到你，顺着聊一句。",
+                self._build_short_window_topic(recent_context),
                 recent_context,
                 channel="short_window",
             )
