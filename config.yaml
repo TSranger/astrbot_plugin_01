@@ -153,11 +153,11 @@ probability_settings:
   # 只影响“长窗口分析后，机器人想不想主动接一句”。
   # 越低越像低存在感群友。
   # 推荐范围：0.03~0.15
-  base_interject_probability: 0.1
+  base_interject_probability: 0.3
 
   # 当当前话题和角色偏好更匹配时，主动插话概率提升到多少。
   # 推荐范围：0.15~0.40
-  boost_interject_probability: 0.3
+  boost_interject_probability: 0.6
 
 summary_settings:
   # 所有记忆归纳任务统一在每天这个时间点检查和执行。

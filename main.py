@@ -1315,20 +1315,22 @@ class AgenticMemoryPlugin(Star):
 
     async def _send_reply(
         self,
-        event: AstrMessageEvent,
+        event: AstrMessageEvent | None,
         group_id: str,
         reply_text: str,
         channel: str,
         cooldown_key: str | None = None,
+        use_group_direct_send: bool = False,
     ) -> bool:
         """Send a reply and record dedup/cooldown state.
 
         Args:
-            event: Incoming message event.
+            event: Incoming message event when a reply context is available.
             group_id: Group identifier.
             reply_text: Reply text.
             channel: Reply channel such as ``immediate`` or ``proactive``.
             cooldown_key: Optional cooldown key to mark after sending.
+            use_group_direct_send: Whether to send directly to the target group id.
 
         Returns:
             ``True`` when the message was sent successfully.
@@ -1369,7 +1371,21 @@ class AgenticMemoryPlugin(Star):
             return False
 
         try:
-            await event.send(event.plain_result(reply_text))
+            if use_group_direct_send:
+                await StarTools.send_message_by_id(
+                    "GroupMessage",
+                    group_id,
+                    MessageChain().message(reply_text),
+                )
+            else:
+                if event is None:
+                    self._log(
+                        "warning",
+                        "[agentic_memory] Skip sending because no event context was provided for event-bound send. "
+                        f"group={group_id}, channel={channel}",
+                    )
+                    return False
+                await event.send(event.plain_result(reply_text))
         except Exception as exc:
             self._log(
                 "error",
@@ -2554,8 +2570,10 @@ class AgenticMemoryPlugin(Star):
             '    "profile_updates": {"用户": {"字段": "值"}},\n'
             '    "dynamic_events": {"用户": ["事件1", "事件2"]}\n'
             "  },\n"
-            '  "interject_topic": "供机器人接话的切入点，没有则留空"\n'
+            '  "interject_topic": "供机器人自然接话的具体切入点；只要当前聊天里存在能顺着接一句的内容，就尽量给出，不要轻易留空；只有完全没有自然切入点时才留空"\n'
             "}\n"
+            "When possible, prefer a short concrete interject_topic copied or paraphrased from the latest still-relevant chat line.\n"
+            "Leave interject_topic empty only when the whole batch truly has no safe natural opening for the bot to join.\n"
             f"Skill excerpt:\n{self.skill_content[:analysis_skill_excerpt_chars]}"
         )
         prompt = (
@@ -2625,25 +2643,64 @@ class AgenticMemoryPlugin(Star):
         self,
         group_id: str,
         chat_batch: list[dict[str, Any]],
-        event: AstrMessageEvent,
     ) -> None:
         """Process long-window memory analysis and optional proactive reply.
 
         Args:
             group_id: Group identifier.
             chat_batch: Long-window batch.
-            event: Incoming message event used for sending proactive replies.
         """
         try:
             llm_result = await self._call_llm_for_analysis(group_id, chat_batch)
+            if not llm_result:
+                self._log(
+                    "warning",
+                    "[agentic_memory] Proactive analysis returned no usable JSON result. "
+                    f"group={group_id}, batch_size={len(chat_batch)}",
+                )
+                return
             analysis = llm_result.get("topic_analysis", {})
             if not isinstance(analysis, dict):
+                self._log(
+                    "warning",
+                    "[agentic_memory] Proactive analysis result has invalid topic_analysis payload. "
+                    f"group={group_id}, batch_size={len(chat_batch)}, payload_type={type(analysis).__name__}",
+                )
                 return
 
             summary_text = str(analysis.get("summary", "")).strip()
             is_significant = bool(analysis.get("is_significant", False))
             matches_preference = bool(analysis.get("matches_preference", False))
             interject_topic = str(llm_result.get("interject_topic", "")).strip()
+            used_fallback_topic = False
+
+            if not interject_topic:
+                last_non_empty_message = ""
+                for item in reversed(chat_batch):
+                    candidate = str(item.get("msg", "")).strip()
+                    if not candidate:
+                        continue
+                    if not last_non_empty_message:
+                        last_non_empty_message = candidate
+                    if self._is_identity_topic(
+                        candidate
+                    ) or not self._is_weak_followup_message(candidate):
+                        interject_topic = candidate
+                        used_fallback_topic = True
+                        break
+
+                if not interject_topic and is_significant and last_non_empty_message:
+                    interject_topic = last_non_empty_message
+                    used_fallback_topic = True
+
+            self._log(
+                "info",
+                "[agentic_memory] Proactive analysis summary. "
+                f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
+                f"matches_preference={matches_preference}, topic_ready={bool(interject_topic)}, "
+                f"used_fallback_topic={used_fallback_topic}, summary={summary_text[:120]!r}, "
+                f"topic={interject_topic[:120]!r}",
+            )
 
             if summary_text:
                 created_at_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2718,9 +2775,16 @@ class AgenticMemoryPlugin(Star):
                 "proactive",
                 self.proactive_cooldown_seconds,
             ):
+                self._log(
+                    "info",
+                    "[agentic_memory] Proactive reply skipped by cooldown. "
+                    f"group={group_id}, batch_size={len(chat_batch)}",
+                )
                 return
 
             should_speak = False
+            random_draw = None
+            probability = 1.0
             if is_significant:
                 should_speak = True
             else:
@@ -2729,9 +2793,33 @@ class AgenticMemoryPlugin(Star):
                     if matches_preference
                     else self.base_interject_probability
                 )
-                should_speak = random.random() < probability
+                random_draw = random.random()
+                should_speak = random_draw < probability
 
-            if not should_speak or not interject_topic:
+            self._log(
+                "info",
+                "[agentic_memory] Proactive decision. "
+                f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
+                f"matches_preference={matches_preference}, probability={probability:.4f}, "
+                f"random_draw={(f'{random_draw:.4f}' if random_draw is not None else 'significant_auto_pass')}, "
+                f"topic_ready={bool(interject_topic)}, should_speak={should_speak}",
+            )
+
+            if not interject_topic:
+                self._log(
+                    "info",
+                    "[agentic_memory] Proactive reply skipped because no interject topic is available after fallback. "
+                    f"group={group_id}, batch_size={len(chat_batch)}",
+                )
+                return
+
+            if not should_speak:
+                self._log(
+                    "info",
+                    "[agentic_memory] Proactive reply skipped by probability decision. "
+                    f"group={group_id}, batch_size={len(chat_batch)}, probability={probability:.4f}, "
+                    f"random_draw={random_draw:.4f}",
+                )
                 return
 
             recent_context = chat_batch[-self.recent_context_messages_for_interject :]
@@ -2742,16 +2830,23 @@ class AgenticMemoryPlugin(Star):
                 channel="proactive",
             )
             sent = await self._send_reply(
-                event,
+                None,
                 group_id,
                 reply_text,
                 channel="proactive",
                 cooldown_key="proactive",
+                use_group_direct_send=True,
             )
             if not sent:
                 self._log(
                     "info",
                     f"Proactive reply was skipped. group={group_id}, topic={interject_topic}",
+                )
+            else:
+                self._log(
+                    "info",
+                    "[agentic_memory] Proactive reply send succeeded. "
+                    f"group={group_id}, batch_size={len(chat_batch)}, topic={interject_topic[:120]!r}",
                 )
         except Exception as exc:
             self._log("error", f"Background memory task failed: {exc}")
@@ -2810,9 +2905,7 @@ class AgenticMemoryPlugin(Star):
         self._append_message(group_id, sender_name, message_text, trigger_state)
         long_window_batch = self._pop_long_window_batch(group_id)
         if long_window_batch:
-            asyncio.create_task(
-                self._process_memory_task(group_id, long_window_batch, event)
-            )
+            asyncio.create_task(self._process_memory_task(group_id, long_window_batch))
 
         special_reply = self._match_special_reply(group_id, trigger_state)
         if special_reply:
