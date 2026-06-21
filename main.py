@@ -1894,10 +1894,12 @@ class AgenticMemoryPlugin(Star):
             for group_id in task_groups:
                 if not self._is_group_allowed(group_id):
                     continue
-                if (
-                    self.proactive_task_last_run_dates[group_id].get(task_id)
-                    == today_text
-                ):
+                if self.proactive_task_last_run_dates[group_id].get(task_id) == today_text:
+                    self._log(
+                        "info",
+                        "[agentic_memory] Scheduled proactive task already handled today, skip. "
+                        f"group={group_id}, task_id={task_id}, date={today_text}",
+                    )
                     continue
 
                 target_time = self._get_planned_proactive_task_time(group_id, task, now)
@@ -1925,6 +1927,7 @@ class AgenticMemoryPlugin(Star):
                 ):
                     continue
 
+                self.proactive_task_last_run_dates[group_id][task_id] = today_text
                 message_text = random.choice(task["messages"])
                 send_status = await self._send_proactive_message_to_group(
                     group_id,
@@ -1932,7 +1935,6 @@ class AgenticMemoryPlugin(Star):
                     task_id,
                 )
                 if send_status == "sent":
-                    self.proactive_task_last_run_dates[group_id][task_id] = today_text
                     if self.scheduled_proactive_cooldown_seconds > 0:
                         self._mark_cooldown(group_id, "proactive")
                     if task_cooldown_seconds > 0:
@@ -1943,7 +1945,6 @@ class AgenticMemoryPlugin(Star):
                     self._mark_cooldown(group_id, failure_retry_key)
                     continue
 
-                self.proactive_task_last_run_dates[group_id][task_id] = today_text
                 self._log(
                     "info",
                     "[agentic_memory] Scheduled proactive task finished without sending and will not retry today. "
