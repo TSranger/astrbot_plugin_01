@@ -24,6 +24,11 @@
 #   - "whitelist_only" = 仅对白名单群生效
 #   - "all_groups"     = 对插件实际生效的所有群都可触发
 
+############################
+# 当前设计缺陷：
+# 1）内心想法（括号里的内容，比如“看看不说话”之类的）就不需要发出来了
+############################
+
 plugin_settings:
   # 是否启用整个插件。
   # 可选值：true / false
@@ -443,7 +448,7 @@ proactive_talk_settings:
       time_range_start: "10:30"
       time_range_end: "12:00"
 
-      cooldown_seconds: 0
+      cooldown_seconds: 43200
 
       messages:
         - "中午吃啥？"
@@ -456,7 +461,7 @@ proactive_talk_settings:
       time_range_start: "05:00"
       time_range_end: "05:50"
 
-      cooldown_seconds: 0
+      cooldown_seconds: 43200
 
       messages:
         - "我就是熬夜冠军！"
