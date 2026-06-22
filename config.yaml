@@ -440,44 +440,53 @@ proactive_talk_settings:
     #   messages:
     #     - "我就是熬夜冠军！"
 
-    # 示例 2：随机时间范围
-    - task_id: "lunch_question"
-      enabled: false
+    # # 示例 2：随机时间范围
+    # - task_id: "lunch_question"
+    #   enabled: false
 
-      # 随机范围模式：
-      # 当不写 time，而是写 time_range_start / time_range_end 时，
-      # 插件会在这个范围内为“当天”随机抽一个固定时刻执行。
-      time_range_start: "10:30"
-      time_range_end: "10:40"
+    #   # 随机范围模式：
+    #   # 当不写 time，而是写 time_range_start / time_range_end 时，
+    #   # 插件会在这个范围内为“当天”随机抽一个固定时刻执行。
+    #   time_range_start: "10:30"
+    #   time_range_end: "10:40"
 
-      cooldown_seconds: 43200
+    #   cooldown_seconds: 43200
 
-      messages:
-        - "中午吃啥？"
-        # - "一会儿吃啥？"
+    #   messages:
+    #     - "中午吃啥？"
+    #     # - "一会儿吃啥？"
 
-    - task_id: "night_champion"
-      enabled: false
+    # - task_id: "night_champion"
+    #   enabled: false
 
-      # 随机范围模式：
-      time_range_start: "05:00"
-      time_range_end: "05:50"
+    #   # 随机范围模式：
+    #   time_range_start: "05:00"
+    #   time_range_end: "05:50"
 
-      cooldown_seconds: 43200
+    #   cooldown_seconds: 43200
 
-      messages:
-        - "我就是熬夜冠军！"
-        # - "一会儿吃啥？"
+    #   messages:
+    #     - "我就是熬夜冠军！"
+    #     # - "一会儿吃啥？"
 
     # 示例 3：给单独群的固定提醒
-    # - task_id: "afternoon_tea"
-    #   enabled: true
-    #   time: "15:30"
-    #   cooldown_seconds: 0
-    #   group_ids:
-    #     - "966648392"
-    #   messages:
-    #     - "下午要不要整点喝的？"
+    - task_id: "lunch_question"
+      enabled: true
+      time: "10:30"
+      cooldown_seconds: 0
+      group_ids:
+        - "966648392"
+      messages:
+        - "中午吃啥？"
+    
+    - task_id: "afternoon_tea"
+      enabled: true
+      time: "15:00"
+      cooldown_seconds: 0
+      group_ids:
+        - "966648392"
+      messages:
+        - "三点钟了，改饮茶了"
 
 logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。
