@@ -442,7 +442,7 @@ proactive_talk_settings:
 
     # 示例 2：随机时间范围
     - task_id: "lunch_question"
-      enabled: true
+      enabled: false
 
       # 随机范围模式：
       # 当不写 time，而是写 time_range_start / time_range_end 时，
@@ -456,18 +456,18 @@ proactive_talk_settings:
         - "中午吃啥？"
         # - "一会儿吃啥？"
 
-    # - task_id: "night_champion"
-    #   enabled: true
+    - task_id: "night_champion"
+      enabled: false
 
-    #   # 随机范围模式：
-    #   time_range_start: "05:00"
-    #   time_range_end: "05:50"
+      # 随机范围模式：
+      time_range_start: "05:00"
+      time_range_end: "05:50"
 
-    #   cooldown_seconds: 43200
+      cooldown_seconds: 43200
 
-    #   messages:
-    #     - "我就是熬夜冠军！"
-    #     # - "一会儿吃啥？"
+      messages:
+        - "我就是熬夜冠军！"
+        # - "一会儿吃啥？"
 
     # 示例 3：给单独群的固定提醒
     # - task_id: "afternoon_tea"
