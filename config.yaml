@@ -608,3 +608,15 @@ llm_settings:
       max_tokens: 128
       timeout_seconds: 60
       extra_headers: {}
+
+image_settings:
+  # 是否启用图片识别。
+  # 开启后，群聊中的图片会被 vision 模型识别并生成文字描述，
+  # 作为上下文参与记忆分析和回复生成。
+  enabled: false
+
+  # 图片描述最大长度（字数）。
+  max_image_description_length: 30
+
+  # 单条消息最多识别几张图片。
+  max_images_per_message: 3

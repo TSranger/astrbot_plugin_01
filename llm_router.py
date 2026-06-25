@@ -33,6 +33,7 @@ class PluginLLMRouter:
         prompt: str,
         system_prompt: str,
         context_messages: list[dict[str, str]] | None = None,
+        image_urls: list[str] | None = None,
     ) -> str:
         """Generate text for a specific plugin role.
 
@@ -41,6 +42,7 @@ class PluginLLMRouter:
             prompt: User prompt content.
             system_prompt: System prompt content.
             context_messages: Optional chat history in OpenAI message format.
+            image_urls: Optional list of image URLs for vision-capable models.
 
         Returns:
             Generated text content.
@@ -53,6 +55,7 @@ class PluginLLMRouter:
                     prompt,
                     system_prompt,
                     context_messages or [],
+                    image_urls=image_urls,
                 )
             except Exception as exc:
                 logger.error(
@@ -94,6 +97,7 @@ class PluginLLMRouter:
         prompt: str,
         system_prompt: str,
         context_messages: list[dict[str, str]],
+        image_urls: list[str] | None = None,
     ) -> str:
         """Call an OpenAI-compatible endpoint defined in plugin config.
 
@@ -102,6 +106,7 @@ class PluginLLMRouter:
             prompt: User prompt content.
             system_prompt: System prompt content.
             context_messages: Optional message history.
+            image_urls: Optional list of image URLs for vision requests.
 
         Returns:
             Generated text content.
@@ -122,7 +127,14 @@ class PluginLLMRouter:
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(context_messages)
-        messages.append({"role": "user", "content": prompt})
+
+        if image_urls:
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+            for url in image_urls:
+                user_content.append({"type": "image_url", "image_url": {"url": url}})
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         payload = {
             "model": model,

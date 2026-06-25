@@ -94,6 +94,18 @@ class MemoryDBManager:
                 )
                 """
             )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS Proactive_Task_State (
+                    group_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    last_run_date TEXT NOT NULL,
+                    last_send_time TEXT DEFAULT NULL,
+                    PRIMARY KEY (group_id, task_id)
+                )
+                """
+            )
             conn.commit()
             logger.info(f"SQLite database initialized: {self.db_path}")
 
@@ -572,3 +584,126 @@ class MemoryDBManager:
                 ),
             )
             conn.commit()
+
+    def get_proactive_task_state(self, group_id: str, task_id: str) -> dict[str, str]:
+        """Get the persisted last run date for a proactive task.
+
+        Args:
+            group_id: Group identifier.
+            task_id: Proactive task identifier.
+
+        Returns:
+            Dictionary with ``last_run_date`` and ``last_send_time`` keys.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT last_run_date, last_send_time FROM Proactive_Task_State "
+                "WHERE group_id = ? AND task_id = ?",
+                (group_id, task_id),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "last_run_date": str(row[0] or ""),
+                    "last_send_time": str(row[1] or ""),
+                }
+            return {"last_run_date": "", "last_send_time": ""}
+
+    def upsert_proactive_task_state(
+        self,
+        group_id: str,
+        task_id: str,
+        last_run_date: str,
+        last_send_time: str,
+    ) -> None:
+        """Insert or update proactive task run state after a successful send.
+
+        Args:
+            group_id: Group identifier.
+            task_id: Proactive task identifier.
+            last_run_date: Date string (``YYYY-MM-DD``) of last successful run.
+            last_send_time: ISO timestamp of the last successful send.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO Proactive_Task_State (group_id, task_id, last_run_date, last_send_time)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(group_id, task_id) DO UPDATE SET
+                    last_run_date = excluded.last_run_date,
+                    last_send_time = excluded.last_send_time
+                """,
+                (group_id, task_id, last_run_date, last_send_time),
+            )
+            conn.commit()
+
+    def get_memory_stats(self, group_id: str) -> dict[str, Any]:
+        """Get structured diagnostic stats for a group's memory layers.
+
+        Args:
+            group_id: Group identifier.
+
+        Returns:
+            Dictionary with per-layer counts, time ranges, and rollup ratios.
+        """
+        stats: dict[str, Any] = {}
+        summary_types = ["paragraph", "daily", "month", "year", "history"]
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            for stype in summary_types:
+                cursor.execute(
+                    "SELECT COUNT(*), "
+                    "COUNT(CASE WHEN rolled_up_at IS NULL THEN 1 END), "
+                    "MIN(created_at), MAX(created_at) "
+                    "FROM Chat_Summaries WHERE group_id = ? AND summary_type = ?",
+                    (group_id, stype),
+                )
+                row = cursor.fetchone()
+                total = int(row[0] or 0)
+                unrolled = int(row[1] or 0)
+                stats[stype] = {
+                    "total": total,
+                    "unrolled": unrolled,
+                    "rolled": total - unrolled,
+                    "earliest": str(row[2] or ""),
+                    "latest": str(row[3] or ""),
+                }
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM User_Profiles WHERE group_id = ?",
+                (group_id,),
+            )
+            stats["user_profile_count"] = int(cursor.fetchone()[0] or 0)
+
+        return stats
+
+    def get_all_user_profiles(self, group_id: str) -> list[dict[str, Any]]:
+        """Get all user profiles for a group.
+
+        Args:
+            group_id: Group identifier.
+
+        Returns:
+            List of profile dictionaries with nickname, fixed_data, and dynamic_events.
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT nickname, fixed_data, dynamic_events, last_updated "
+                "FROM User_Profiles WHERE group_id = ? ORDER BY last_updated DESC",
+                (group_id,),
+            )
+            profiles: list[dict[str, Any]] = []
+            for row in cursor.fetchall():
+                profiles.append(
+                    {
+                        "nickname": str(row[0]),
+                        "fixed_data": json.loads(row[1]),
+                        "dynamic_events": json.loads(row[2]),
+                        "last_updated": str(row[3] or ""),
+                    }
+                )
+            return profiles
