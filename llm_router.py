@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import re
 from typing import Any
 from urllib import error, request
 
@@ -7,15 +9,15 @@ from astrbot.api import logger
 
 
 class PluginLLMRouter:
-    """Route plugin LLM calls by role without modifying AstrBot core.
+    """按角色路由插件 LLM 调用，不改 AstrBot 核心。
 
-    The router supports two modes:
-    1. ``astrbot_default``: delegate all calls to the current AstrBot provider.
-    2. ``plugin_router``: use plugin-local OpenAI-compatible endpoints per role.
+    路由支持两种模式：
+    1. ``astrbot_default``：全部继续走 AstrBot 当前 provider。
+    2. ``plugin_router``：按角色调用插件内配置的 OpenAI 兼容接口。
 
     Args:
-        context: AstrBot plugin context.
-        settings: The ``llm_settings`` section from ``config.yaml``.
+        context: AstrBot 插件上下文。
+        settings: ``config.yaml`` 里的 ``llm_settings`` 配置段。
     """
 
     def __init__(self, context: Any, settings: dict[str, Any] | None):
@@ -35,17 +37,17 @@ class PluginLLMRouter:
         context_messages: list[dict[str, str]] | None = None,
         image_urls: list[str] | None = None,
     ) -> str:
-        """Generate text for a specific plugin role.
+        """为指定角色生成文本。
 
         Args:
-            role: Logical role name such as ``chat`` or ``analysis``.
-            prompt: User prompt content.
-            system_prompt: System prompt content.
-            context_messages: Optional chat history in OpenAI message format.
-            image_urls: Optional list of image URLs for vision-capable models.
+            role: 逻辑角色名，例如 ``chat`` 或 ``analysis``。
+            prompt: 用户输入提示词。
+            system_prompt: 系统提示词。
+            context_messages: 可选的 OpenAI 消息格式上下文。
+            image_urls: 可选图片 URL 列表，用于视觉模型。
 
         Returns:
-            Generated text content.
+            生成的文本内容。
         """
         role_config = self.roles.get(role, {})
         if self.mode == "plugin_router" and role_config.get("enabled"):
@@ -70,14 +72,14 @@ class PluginLLMRouter:
         prompt: str,
         system_prompt: str,
     ) -> str:
-        """Call the current AstrBot provider.
+        """调用当前 AstrBot provider。
 
         Args:
-            prompt: User prompt content.
-            system_prompt: System prompt content.
+            prompt: 用户输入提示词。
+            system_prompt: 系统提示词。
 
         Returns:
-            Generated text content.
+            生成的文本内容。
         """
         provider = self.context.get_using_provider()
         if not provider:
@@ -99,17 +101,17 @@ class PluginLLMRouter:
         context_messages: list[dict[str, str]],
         image_urls: list[str] | None = None,
     ) -> str:
-        """Call an OpenAI-compatible endpoint defined in plugin config.
+        """调用插件配置里的 OpenAI 兼容接口。
 
         Args:
-            role_config: Role-specific OpenAI-compatible config.
-            prompt: User prompt content.
-            system_prompt: System prompt content.
-            context_messages: Optional message history.
-            image_urls: Optional list of image URLs for vision requests.
+            role_config: 角色专用的 OpenAI 兼容配置。
+            prompt: 用户输入提示词。
+            system_prompt: 系统提示词。
+            context_messages: 可选消息历史。
+            image_urls: 可选图片 URL 列表，用于视觉请求。
 
         Returns:
-            Generated text content.
+            生成的文本内容。
         """
         if role_config.get("provider_type") != "openai_compatible":
             raise ValueError(
@@ -148,6 +150,7 @@ class PluginLLMRouter:
             "Content-Type": "application/json",
         }
         api_key = str(role_config.get("api_key", "")).strip()
+        api_key = self._resolve_env_var(api_key)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         extra_headers = role_config.get("extra_headers", {})
@@ -172,19 +175,19 @@ class PluginLLMRouter:
         payload: dict[str, Any],
         timeout_seconds: int,
     ) -> dict[str, Any]:
-        """Send a JSON HTTP request using Python standard library only.
+        """只用标准库发送 JSON HTTP 请求。
 
         Args:
-            endpoint: Target URL.
-            headers: HTTP headers.
-            payload: JSON body.
-            timeout_seconds: Request timeout in seconds.
+            endpoint: 目标 URL。
+            headers: HTTP 请求头。
+            payload: JSON 请求体。
+            timeout_seconds: 请求超时时间，单位秒。
 
         Returns:
-            Parsed JSON response.
+            解析后的 JSON 响应。
 
         Raises:
-            RuntimeError: Raised when the remote endpoint returns an error.
+            RuntimeError: 当远端接口返回错误时抛出。
         """
         http_request = request.Request(
             endpoint,
@@ -203,13 +206,13 @@ class PluginLLMRouter:
             raise RuntimeError(f"Request failed: {exc}") from exc
 
     def _extract_openai_text(self, response_data: dict[str, Any]) -> str:
-        """Extract plain text from an OpenAI-compatible response.
+        """从 OpenAI 兼容响应中提取纯文本。
 
         Args:
-            response_data: Parsed JSON response body.
+            response_data: 已解析的 JSON 响应体。
 
         Returns:
-            Generated text content.
+            生成的文本内容。
         """
         choices = response_data.get("choices", [])
         if not choices:
@@ -228,3 +231,21 @@ class PluginLLMRouter:
                     parts.append(item)
 
         return "\n".join(part.strip() for part in parts if part.strip()).strip()
+
+    @staticmethod
+    def _resolve_env_var(value: str) -> str:
+        """Resolve ``${ENV_VAR}`` patterns in a config value.
+
+        Args:
+            value: Config value that may contain env var references.
+
+        Returns:
+            Resolved value with env vars substituted.
+        """
+        pattern = re.compile(r"\$\{([^}]+)\}")
+        result = value
+        for match in pattern.finditer(value):
+            env_name = match.group(1)
+            env_val = os.environ.get(env_name, "")
+            result = result.replace(match.group(0), env_val)
+        return result.strip()

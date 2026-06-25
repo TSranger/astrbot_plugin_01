@@ -1,4 +1,4 @@
-"""Database module for plugin memory summaries and user profiles."""
+"""插件记忆摘要、用户画像和主动任务状态的数据库模块。"""
 
 import json
 import os
@@ -9,28 +9,28 @@ from loguru import logger
 
 
 class MemoryDBManager:
-    """Manage SQLite persistence for summaries and user profiles."""
+    """管理摘要、画像和主动任务状态的 SQLite 持久化。"""
 
     def __init__(self, db_path: str = "data/agentic_memory.db"):
-        """Initialize the SQLite database manager.
+        """初始化 SQLite 数据库管理器。
 
         Args:
-            db_path: SQLite database file path.
+            db_path: SQLite 数据库文件路径。
         """
         self.db_path = db_path
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Create one SQLite connection for the current operation.
+        """创建一次操作所用的 SQLite 连接。
 
         Returns:
-            SQLite connection with cross-thread access enabled.
+            允许跨线程访问的 SQLite 连接。
         """
         return sqlite3.connect(self.db_path, check_same_thread=False)
 
     def _init_db(self) -> None:
-        """Initialize tables and apply lightweight schema migrations."""
+        """初始化表结构并执行轻量级 schema 迁移。"""
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -122,22 +122,22 @@ class MemoryDBManager:
         cleanup_after: str | None = None,
         source_count: int = 0,
     ) -> int:
-        """Insert one summary row.
+        """插入一条摘要记录。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Summary layer such as ``paragraph`` or ``daily``.
-            content: Summary text.
-            is_significant: Whether the summary is marked significant.
-            memory_key: Logical time bucket key for the summary.
-            period_start: Covered period start time.
-            period_end: Covered period end time.
-            rolled_up_at: Rollup timestamp when this row has been aggregated upward.
-            cleanup_after: Earliest time when this row may be deleted.
-            source_count: Number of source rows used for this summary.
+            group_id: 群号。
+            summary_type: 摘要层级，例如 ``paragraph`` 或 ``daily``。
+            content: 摘要文本。
+            is_significant: 是否标记为重要摘要。
+            memory_key: 摘要所属的逻辑时间桶。
+            period_start: 覆盖区间的开始时间。
+            period_end: 覆盖区间的结束时间。
+            rolled_up_at: 被继续归纳到上层的时间。
+            cleanup_after: 这条记录最早可删除的时间。
+            source_count: 参与归纳的源记录数。
 
         Returns:
-            Inserted row id.
+            插入后的行 ID。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -182,19 +182,19 @@ class MemoryDBManager:
         order_desc: bool = False,
         only_unrolled: bool = False,
     ) -> list[tuple[Any, ...]]:
-        """Fetch summaries for one group and one layer.
+        """查询某个群、某个层级的摘要。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Summary layer.
-            before_time: Optional upper bound for ``created_at``.
-            memory_key: Optional exact ``memory_key`` filter.
-            limit: Optional row limit.
-            order_desc: Whether to sort newest first.
-            only_unrolled: Whether to restrict rows not yet rolled upward.
+            group_id: 群号。
+            summary_type: 摘要层级。
+            before_time: 可选的 ``created_at`` 上限。
+            memory_key: 可选的精确 ``memory_key`` 过滤。
+            limit: 可选行数限制。
+            order_desc: 是否按时间倒序。
+            only_unrolled: 是否只取尚未向上归纳的记录。
 
         Returns:
-            Summary rows.
+            摘要行列表。
         """
         conditions = ["group_id = ?", "summary_type = ?"]
         params: list[Any] = [group_id, summary_type]
@@ -233,17 +233,17 @@ class MemoryDBManager:
         period_end: str | None = None,
         exclude_memory_keys: list[str] | None = None,
     ) -> list[tuple[Any, ...]]:
-        """Fetch rows eligible for upward rollup by covered period.
+        """按时间覆盖区间查询可继续向上归纳的记录。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Source summary layer.
-            period_start: Optional lower bound for the covered period.
-            period_end: Optional upper bound for the covered period.
-            exclude_memory_keys: Optional memory keys to exclude.
+            group_id: 群号。
+            summary_type: 源摘要层级。
+            period_start: 可选覆盖区间下界。
+            period_end: 可选覆盖区间上界。
+            exclude_memory_keys: 可选排除的 memory_key。
 
         Returns:
-            Candidate rows ordered by period and creation time.
+            按区间和创建时间排序的候选行。
         """
         conditions = ["group_id = ?", "summary_type = ?", "rolled_up_at IS NULL"]
         params: list[Any] = [group_id, summary_type]
@@ -277,15 +277,15 @@ class MemoryDBManager:
         summary_type: str,
         memory_key: str,
     ) -> tuple[Any, ...] | None:
-        """Fetch the newest summary row for one memory key.
+        """按 memory_key 取最新的一条摘要。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Summary layer.
-            memory_key: Logical memory key.
+            group_id: 群号。
+            summary_type: 摘要层级。
+            memory_key: 逻辑 memory_key。
 
         Returns:
-            Summary row or ``None``.
+            摘要行或 ``None``。
         """
         rows = self.get_summaries(
             group_id,
@@ -305,15 +305,15 @@ class MemoryDBManager:
         period_end: str | None = None,
         source_count: int = 0,
     ) -> None:
-        """Update one existing summary row.
+        """更新一条已有摘要记录。
 
         Args:
-            summary_id: Row id to update.
-            content: New summary text.
-            is_significant: Updated significance flag.
-            period_start: Updated covered period start.
-            period_end: Updated covered period end.
-            source_count: Updated source count.
+            summary_id: 要更新的行 ID。
+            content: 新摘要文本。
+            is_significant: 更新后的重要性标记。
+            period_start: 更新后的覆盖开始时间。
+            period_end: 更新后的覆盖结束时间。
+            source_count: 更新后的源记录数。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -344,12 +344,12 @@ class MemoryDBManager:
         rolled_up_at: str,
         cleanup_after: str | None = None,
     ) -> None:
-        """Mark source summaries as already aggregated upward.
+        """把源摘要标记为已经完成向上归纳。
 
         Args:
-            summary_ids: Source row ids.
-            rolled_up_at: Rollup timestamp.
-            cleanup_after: First safe deletion timestamp.
+            summary_ids: 源行 ID 列表。
+            rolled_up_at: 归纳时间戳。
+            cleanup_after: 最早可删除时间戳。
         """
         if not summary_ids:
             return
@@ -370,12 +370,12 @@ class MemoryDBManager:
     def delete_summaries(
         self, group_id: str, summary_type: str, before_time: str | None = None
     ) -> None:
-        """Delete summaries by layer and optional creation cutoff.
+        """按层级和可选时间上限删除摘要。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Summary layer.
-            before_time: Optional upper bound for ``created_at``.
+            group_id: 群号。
+            summary_type: 摘要层级。
+            before_time: 可选的 ``created_at`` 上限。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -397,15 +397,15 @@ class MemoryDBManager:
         summary_type: str,
         now_text: str,
     ) -> int:
-        """Delete rows that have already passed their delayed cleanup time.
+        """删除已经超过延迟清理时间的记录。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Summary layer.
-            now_text: Current timestamp text.
+            group_id: 群号。
+            summary_type: 摘要层级。
+            now_text: 当前时间文本。
 
         Returns:
-            Deleted row count.
+            删除的行数。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -424,10 +424,10 @@ class MemoryDBManager:
             return int(cursor.rowcount or 0)
 
     def list_group_ids_with_summaries(self) -> list[str]:
-        """List all groups that currently have stored summaries.
+        """列出当前存在摘要数据的所有群。
 
         Returns:
-            Distinct group id list.
+            去重后的群号列表。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -443,16 +443,16 @@ class MemoryDBManager:
         keywords: list[str],
         limit: int,
     ) -> list[tuple[Any, ...]]:
-        """Search summaries by lightweight keyword matching.
+        """按轻量关键词匹配搜索摘要。
 
         Args:
-            group_id: Group identifier.
-            summary_types: Candidate summary layers.
-            keywords: Keywords used for ``LIKE`` matching.
-            limit: Maximum returned rows.
+            group_id: 群号。
+            summary_types: 候选摘要层级。
+            keywords: 用于 ``LIKE`` 匹配的关键词。
+            limit: 最大返回行数。
 
         Returns:
-            Matching summary rows.
+            匹配到的摘要行。
         """
         if not summary_types or not keywords or limit <= 0:
             return []
@@ -489,17 +489,17 @@ class MemoryDBManager:
         limit: int,
         exclude_ids: list[int] | None = None,
     ) -> list[tuple[Any, ...]]:
-        """Fetch summaries whose covered period overlaps a time window.
+        """查询覆盖时间与目标窗口重叠的摘要。
 
         Args:
-            group_id: Group identifier.
-            anchor_start: Window start timestamp.
-            anchor_end: Window end timestamp.
-            limit: Maximum returned rows.
-            exclude_ids: Optional row ids to exclude.
+            group_id: 群号。
+            anchor_start: 窗口开始时间。
+            anchor_end: 窗口结束时间。
+            limit: 最大返回行数。
+            exclude_ids: 可选排除的行 ID。
 
         Returns:
-            Neighbor summary rows near the anchor window.
+            锚点窗口附近的相邻摘要行。
         """
         if limit <= 0:
             return []
@@ -531,14 +531,14 @@ class MemoryDBManager:
             return cursor.fetchall()
 
     def get_user_profile(self, group_id: str, nickname: str) -> dict[str, Any]:
-        """Get one user profile with decoded JSON fields.
+        """获取一条已解码 JSON 字段的用户画像。
 
         Args:
-            group_id: Group identifier.
-            nickname: User nickname.
+            group_id: 群号。
+            nickname: 用户昵称。
 
         Returns:
-            Profile dictionary with fixed and dynamic memory.
+            包含固定信息和动态记忆的画像字典。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -557,13 +557,13 @@ class MemoryDBManager:
     def upsert_user_profile(
         self, group_id: str, nickname: str, fixed_data: dict, dynamic_events: list
     ) -> None:
-        """Insert or update one user profile.
+        """插入或更新一条用户画像。
 
         Args:
-            group_id: Group identifier.
-            nickname: User nickname.
-            fixed_data: Stable profile fields.
-            dynamic_events: Recent dynamic events.
+            group_id: 群号。
+            nickname: 用户昵称。
+            fixed_data: 稳定画像字段。
+            dynamic_events: 最近动态事件。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -586,14 +586,14 @@ class MemoryDBManager:
             conn.commit()
 
     def get_proactive_task_state(self, group_id: str, task_id: str) -> dict[str, str]:
-        """Get the persisted last run date for a proactive task.
+        """获取主动任务持久化的最后执行状态。
 
         Args:
-            group_id: Group identifier.
-            task_id: Proactive task identifier.
+            group_id: 群号。
+            task_id: 主动任务 ID。
 
         Returns:
-            Dictionary with ``last_run_date`` and ``last_send_time`` keys.
+            包含 ``last_run_date`` 和 ``last_send_time`` 的字典。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -617,13 +617,13 @@ class MemoryDBManager:
         last_run_date: str,
         last_send_time: str,
     ) -> None:
-        """Insert or update proactive task run state after a successful send.
+        """在成功发送后写入或更新主动任务状态。
 
         Args:
-            group_id: Group identifier.
-            task_id: Proactive task identifier.
-            last_run_date: Date string (``YYYY-MM-DD``) of last successful run.
-            last_send_time: ISO timestamp of the last successful send.
+            group_id: 群号。
+            task_id: 主动任务 ID。
+            last_run_date: 最近一次成功运行日期，格式为 ``YYYY-MM-DD``。
+            last_send_time: 最近一次成功发送的 ISO 时间戳。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -640,13 +640,13 @@ class MemoryDBManager:
             conn.commit()
 
     def get_memory_stats(self, group_id: str) -> dict[str, Any]:
-        """Get structured diagnostic stats for a group's memory layers.
+        """获取某个群各层记忆的结构化诊断统计。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            Dictionary with per-layer counts, time ranges, and rollup ratios.
+            包含各层数量、时间范围和归纳比例的字典。
         """
         stats: dict[str, Any] = {}
         summary_types = ["paragraph", "daily", "month", "year", "history"]
@@ -681,13 +681,13 @@ class MemoryDBManager:
         return stats
 
     def get_all_user_profiles(self, group_id: str) -> list[dict[str, Any]]:
-        """Get all user profiles for a group.
+        """获取某个群的全部用户画像。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            List of profile dictionaries with nickname, fixed_data, and dynamic_events.
+            包含 nickname、fixed_data 和 dynamic_events 的画像列表。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()

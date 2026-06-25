@@ -488,6 +488,75 @@ proactive_talk_settings:
       messages:
         - "三点钟了，改饮茶了"
 
+news_selfie_settings:
+  # 是否启用新闻自拍功能。
+  enabled: true
+
+  # HTTP(S) 代理地址，用于访问被墙的新闻源（如 Google News RSS）。
+  # 格式示例：http://127.0.0.1:7890
+  # http_proxy: ""
+  # https_proxy: ""
+  http_proxy: "http://127.0.0.1:7890"
+  https_proxy: "http://127.0.0.1:7890"
+
+  # 每日执行任务列表。每个任务可以设置固定时间或随机时间窗口。
+  # 如果未配置任何任务，则回退使用 check_time 每天执行一次。
+  tasks:
+    - task_id: "morning_news"
+      enabled: true
+      # 固定触发时间，格式 HH:MM。
+      time: "08:00"
+    - task_id: "afternoon_news"
+      enabled: true
+      # 随机时间窗口。不写 time，而是写 time_range_start / time_range_end 时，
+      # 会在该范围内为当天随机抽一个固定时刻执行。
+      time_range_start: "14:00"
+      time_range_end: "16:00"
+    - task_id: "night_news"
+      enabled: false
+      time: "20:00"
+
+  # 新闻源：google_rss（零配置）/ newsapi（需 API Key）。
+  news_source: "google_rss"
+
+  # NewsAPI 的 API Key。仅 news_source=newsapi 时需要。
+  # 免费注册：https://newsapi.org/register
+  news_api_key: ""
+
+  # 新闻地区代码：cn / us / jp 等。
+  news_country: "cn"
+
+  # 新闻语言：zh / en。
+  news_language: "zh"
+
+  # 每次最多拉取多少条头条。
+  max_headlines: 10
+
+  # 图片生成服务商：dalle / openai_images / tongyi。
+  # 注意：mimo 不支持图片生成（mimo-v2-omni 是纯文本+视觉理解模型），请勿使用。
+  image_gen_provider: "tongyi"
+
+  # 图片生成 API Key。
+  image_gen_api_key: "sk-ws-H.RYLDLLX.QInZ.MEUCIG_ntzUlJbdkDpELN2k51CPlHy-9UgIwT1iWJ8MovMAkAiEAh-paX7ccu4NYZyMhDqZHCcDRrV0ruWwCeG-ck4gZnqM"
+
+  # 图片生成 API 基础地址。
+  # dalle/openai_images: https://api.openai.com（也支持国产兼容端点）
+  # tongyi: 使用通义万相固定端点，无需配置 base_url
+  image_gen_base_url: "https://api.openai.com"
+
+  # 图片生成模型名。
+  # dalle/openai_images: "dall-e-3"
+  # tongyi: "wan2.2-t2i-flash" 或 "wan2.2-t2i-plus"
+  image_gen_model: "wan2.7-image"
+
+  # 每次管道最多发送几条自拍新闻（从大新闻中随机选取）。
+  max_selfies_per_run: 1
+
+  # 投递群列表。不填则使用 proactive_talk_settings.default_group_ids。
+  group_ids:
+    - "966648392"
+    - "157903619"
+
 logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。
   # true  = 平台日志 + 插件文件日志双写
@@ -534,16 +603,16 @@ llm_settings:
       # - "https://xxx/v1"
       # - "https://xxx/v1/chat/completions"
       # 插件会自动兼容补全。
-      base_url: "https://api.deepseek.com"
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
 
       # API Key。留空表示不带 Authorization Bearer。
-      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
 
       # 模型名，例如：
       # - "gpt-4o-mini"
       # - "deepseek-chat"
       # - "qwen-plus"
-      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      model: "mimo-v2.5"    # 或“deepseek-v4-pro”
 
       # 温度。越高越活泼、越容易发散。
       # chat 推荐范围：0.7~1.0
@@ -570,9 +639,9 @@ llm_settings:
     analysis:
       enabled: true
       provider_type: "openai_compatible"
-      base_url: "https://api.deepseek.com"
-      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
-      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
+      api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
+      model: "mimo-v2.5"    # 或“deepseek-v4-pro”
 
       # analysis 需要稳定、克制、结构化，温度建议较低。
       temperature: 0.2
@@ -586,13 +655,41 @@ llm_settings:
     compression:
       enabled: true
       provider_type: "openai_compatible"
-      base_url: "https://api.deepseek.com"
-      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
-      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
+      api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
+      model: "mimo-v2.5"    # 或“deepseek-v4-pro”
       temperature: 0.2
       top_p: 0.9
       max_tokens: 512
       timeout_seconds: 90
+      extra_headers: {}
+
+    # 角色：news_evaluator
+    # 用途：评估新闻是否为值得关注的大新闻。
+    news_evaluator:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://api.deepseek.com"
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      model: "deepseek-v4-flash"
+      temperature: 0.1
+      top_p: 0.9
+      max_tokens: 768
+      timeout_seconds: 30
+      extra_headers: {}
+
+    # 角色：news_writer
+    # 用途：生成"在现场看热闹"的第一人称口语文案。
+    news_writer:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://api.deepseek.com"
+      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
+      model: "deepseek-v4-flash"
+      temperature: 0.85
+      top_p: 0.9
+      max_tokens: 256
+      timeout_seconds: 30
       extra_headers: {}
 
     # 角色：event_merge
@@ -600,9 +697,23 @@ llm_settings:
     event_merge:
       enabled: true
       provider_type: "openai_compatible"
-      base_url: "https://api.deepseek.com"
-      api_key: "sk-985dfc13a842478ca2dc1ea63171a96e"
-      model: "deepseek-v4-flash"    # 或“deepseek-v4-pro”
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
+      api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
+      model: "mimo-v2.5"    # 或“deepseek-v4-pro”
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 128
+      timeout_seconds: 60
+      extra_headers: {}
+
+    # 角色：vision
+    # 用途：图片识别（描述图片内容，生成简短中文描述）。
+    vision:
+      enabled: true
+      provider_type: "openai_compatible"
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
+      api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
+      model: "mimo-v2.5"
       temperature: 0.2
       top_p: 0.9
       max_tokens: 128
@@ -613,7 +724,7 @@ image_settings:
   # 是否启用图片识别。
   # 开启后，群聊中的图片会被 vision 模型识别并生成文字描述，
   # 作为上下文参与记忆分析和回复生成。
-  enabled: false
+  enabled: true
 
   # 图片描述最大长度（字数）。
   max_image_description_length: 30

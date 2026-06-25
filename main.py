@@ -20,6 +20,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .db_manager import MemoryDBManager
 from .llm_router import PluginLLMRouter
+from .news_selfie import NewsSelfiePipeline, resolve_news_data_dir
 
 
 @register(
@@ -29,7 +30,7 @@ from .llm_router import PluginLLMRouter
     "具备长期折叠记忆、即时反应与多模型路由的群聊智能体",
 )
 class AgenticMemoryPlugin(Star):
-    """Group companion plugin with memory, immediate reactions, and role-based LLM routing."""
+    """群聊陪伴插件：负责记忆、即时回应和按角色路由模型。"""
 
     _PROMPT_INJECTION_PATTERNS = (
         r"(?i)忽略(?:上文|前文|以上|之前).*",
@@ -77,10 +78,10 @@ class AgenticMemoryPlugin(Star):
     )
 
     def __init__(self, context: Context):
-        """Initialize plugin state and runtime services.
+        """初始化插件状态、配置、数据库和后台任务。
 
         Args:
-            context: AstrBot plugin context.
+            context: AstrBot 插件运行上下文。
         """
         super().__init__(context)
         self.plugin_dir = Path(__file__).resolve().parent
@@ -109,6 +110,7 @@ class AgenticMemoryPlugin(Star):
             if str(pattern).strip()
         ]
 
+        # 长窗口阈值：累计到一定消息后再交给 LLM 做分析和记忆折叠。
         self.threshold = max(1, int(self.memory_settings.get("buffer_threshold", 12)))
         self.overlap = max(0, int(self.memory_settings.get("overlap_count", 3)))
         self.max_dynamic_events = max(
@@ -124,6 +126,7 @@ class AgenticMemoryPlugin(Star):
             int(self.memory_settings.get("recent_context_messages_for_interject", 12)),
         )
 
+        # 即时回复使用的上下文长度和冷却时间。
         self.immediate_context_messages = max(
             1,
             int(self.reaction_settings.get("immediate_context_messages", 12)),
@@ -183,6 +186,7 @@ class AgenticMemoryPlugin(Star):
             self.probability_settings.get("boost_interject_probability", 0.6),
         )
 
+        # 记忆召回开关：控制回复时是否补充历史摘要和用户画像。
         self.memory_lookup_enabled = bool(
             self.memory_lookup_settings.get("enabled", True),
         )
@@ -261,6 +265,7 @@ class AgenticMemoryPlugin(Star):
             int(self.summary_settings.get("year_cleanup_delay_years", 1)),
         )
 
+        # 去重用于避免机器人短时间内复读同一句。
         self.dedup_enabled = bool(self.reply_dedup_settings.get("enabled", False))
         self.dedup_window_size = max(
             1,
@@ -288,12 +293,14 @@ class AgenticMemoryPlugin(Star):
         )
         self.plugin_file_logger = self._setup_plugin_file_logger()
 
+        # 读取人设 / 技能文本，并初始化 LLM 路由与记忆数据库。
         self.skill_content = self._load_skill(
             self.skill_settings.get("active_skill_file", ""),
         )
         self.router = PluginLLMRouter(self.context, self.config.get("llm_settings", {}))
         self.db = MemoryDBManager(str(self._resolve_db_path()))
 
+        # 群级运行态缓存：长窗口、短窗口、去重历史、主动发言状态。
         self.message_buffers: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self.short_windows: dict[str, deque[dict[str, Any]]] = {}
         self.reply_history: dict[str, deque[str]] = {}
@@ -307,7 +314,16 @@ class AgenticMemoryPlugin(Star):
         self.proactive_task_planned_times: dict[str, dict[str, datetime]] = defaultdict(
             dict
         )
+        self.news_selfie_task_last_run_dates: dict[str, str] = {}
+        self.news_selfie_task_planned_times: dict[str, datetime] = {}
         self.group_sessions: dict[str, str] = {}
+
+        # 本轮对话已引用记忆：避免短时间内反复提同一件事。
+        self.cited_memory_ids: dict[str, dict[int, datetime]] = defaultdict(dict)
+
+        # 发言密度熔断：记录群消息到达时间和 bot 发送时间。
+        self.message_arrival_times: dict[str, deque[datetime]] = {}
+        self.bot_send_times: dict[str, deque[datetime]] = {}
 
         self._log(
             "info",
@@ -317,15 +333,33 @@ class AgenticMemoryPlugin(Star):
             f"log_file={self._resolve_plugin_log_path()}",
         )
 
+        # 启动后台任务：每日记忆压缩，以及可选的主动发言调度。
         asyncio.create_task(self._cron_daily_compression())
         if self.proactive_talk_settings.get("enabled", False):
             asyncio.create_task(self._cron_proactive_talk())
 
+        news_selfie_settings = self.config.get("news_selfie_settings", {})
+        if news_selfie_settings.get("enabled", False):
+            self.news_selfie_pipeline = NewsSelfiePipeline(
+                settings={
+                    **news_selfie_settings,
+                    "active_skill_file": self.skill_settings.get(
+                        "active_skill_file", ""
+                    ),
+                },
+                router=self.router,
+                plugin_dir=self.plugin_dir,
+                data_dir=resolve_news_data_dir(),
+            )
+            asyncio.create_task(self._cron_news_selfie())
+        else:
+            self.news_selfie_pipeline = None
+
     def _resolve_plugin_log_path(self) -> Path:
-        """Resolve the plugin-local log file path.
+        """解析插件自己的日志文件路径。
 
         Returns:
-            Absolute log file path inside AstrBot plugin data when a relative path is used.
+            插件日志文件的绝对路径。
         """
         configured_path = Path(
             str(
@@ -343,10 +377,10 @@ class AgenticMemoryPlugin(Star):
         return log_path
 
     def _setup_plugin_file_logger(self) -> logging.Logger | None:
-        """Create the plugin-local file logger when enabled.
+        """在开启文件日志时创建插件专用 logger。
 
         Returns:
-            Configured ``logging.Logger`` instance or ``None`` when disabled.
+            已配置的日志对象；如果关闭文件日志则返回 ``None``。
         """
         if not self.file_logging_enabled:
             return None
@@ -366,11 +400,11 @@ class AgenticMemoryPlugin(Star):
         return plugin_logger
 
     def _log(self, level: str, message: str) -> None:
-        """Write plugin logs to AstrBot logger and optional plugin file logger.
+        """同时写入 AstrBot 全局日志和插件本地日志。
 
         Args:
-            level: Logging level name such as ``info`` or ``error``.
-            message: Final log message.
+            level: 日志级别名，例如 ``info`` 或 ``error``。
+            message: 最终日志内容。
         """
         log_func = getattr(logger, level, None)
         if callable(log_func):
@@ -381,13 +415,13 @@ class AgenticMemoryPlugin(Star):
             file_log_func(message)
 
     def _truncate_debug_text(self, value: Any) -> str:
-        """Trim long debug text to the configured maximum length.
+        """截断调试文本，避免日志过长。
 
         Args:
-            value: Original debug value.
+            value: 原始调试内容。
 
         Returns:
-            Possibly truncated debug text.
+            可能已截断的文本。
         """
         normalized = str(value)
         if len(normalized) <= self.raw_event_max_chars:
@@ -395,13 +429,13 @@ class AgenticMemoryPlugin(Star):
         return normalized[: self.raw_event_max_chars] + "...(truncated)"
 
     def _serialize_message_segment(self, segment: Any) -> dict[str, Any]:
-        """Convert one message segment into a JSON-friendly structure.
+        """把一条消息片段转成便于 JSON 打印的结构。
 
         Args:
-            segment: Message segment object from the event adapter.
+            segment: 事件适配器提供的消息片段对象。
 
         Returns:
-            Dictionary that captures common fields for debugging.
+            用于调试的字典结构。
         """
         serialized = {
             "repr": self._truncate_debug_text(repr(segment)),
@@ -432,12 +466,12 @@ class AgenticMemoryPlugin(Star):
         group_id: str,
         message_text: str,
     ) -> None:
-        """Write raw incoming event structure for troubleshooting mention parsing.
+        """在调试模式下输出原始事件结构，帮助排查 @ 和引用识别问题。
 
         Args:
-            event: Incoming group event.
-            group_id: Current group identifier.
-            message_text: Parsed plain message text.
+            event: 收到的群消息事件。
+            group_id: 当前群号。
+            message_text: 解析后的纯文本消息。
         """
         if not self.raw_event_debug_enabled:
             return
@@ -480,13 +514,13 @@ class AgenticMemoryPlugin(Star):
         )
 
     def _load_config(self, path: Path) -> dict[str, Any]:
-        """Load plugin configuration.
+        """加载插件配置。
 
         Args:
-            path: Config file path.
+            path: 配置文件路径。
 
         Returns:
-            Parsed YAML config.
+            解析后的 YAML 配置。
         """
         if not path.exists():
             logger.error(f"Config file is missing: {path}")
@@ -499,13 +533,13 @@ class AgenticMemoryPlugin(Star):
         return loaded
 
     def _load_skill(self, skill_path: str) -> str:
-        """Load the active skill prompt file.
+        """加载当前启用的人设 / 技能文本。
 
         Args:
-            skill_path: Relative or absolute skill file path.
+            skill_path: 相对或绝对技能文件路径。
 
         Returns:
-            Skill file content.
+            技能文件内容。
         """
         if not skill_path:
             return "You are a natural, casual group member."
@@ -523,15 +557,15 @@ class AgenticMemoryPlugin(Star):
         default_hour: int,
         default_minute: int,
     ) -> tuple[int, int]:
-        """Parse ``HH:MM`` text and fall back to defaults when invalid.
+        """解析 ``HH:MM`` 格式时间，非法时回退默认值。
 
         Args:
-            value: Time text from config.
-            default_hour: Fallback hour.
-            default_minute: Fallback minute.
+            value: 配置里的时间文本。
+            default_hour: 默认小时。
+            default_minute: 默认分钟。
 
         Returns:
-            Parsed hour and minute tuple.
+            解析后的小时和分钟。
         """
         normalized = str(value).strip()
         if re.fullmatch(r"\d{2}:\d{2}", normalized):
@@ -549,10 +583,10 @@ class AgenticMemoryPlugin(Star):
         return default_hour, default_minute
 
     def _resolve_db_path(self) -> Path:
-        """Resolve the SQLite database path.
+        """解析 SQLite 数据库路径。
 
         Returns:
-            Absolute database path inside AstrBot plugin data when a relative path is used.
+            如果是相对路径，则解析到 AstrBot 插件数据目录下的绝对路径。
         """
         configured_path = Path(
             str(
@@ -569,13 +603,13 @@ class AgenticMemoryPlugin(Star):
         return db_path
 
     def _is_group_allowed(self, group_id: str) -> bool:
-        """Check whether the plugin should run in a group.
+        """判断插件是否允许在某个群内运行。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            ``True`` when the group is allowed.
+            群被允许时返回 ``True``。
         """
         if not self.config.get("plugin_settings", {}).get("enabled", True):
             return False
@@ -589,39 +623,39 @@ class AgenticMemoryPlugin(Star):
         return group_id in whitelist if whitelist else False
 
     def _get_short_window(self, group_id: str) -> deque[dict[str, Any]]:
-        """Get or create the short reaction window for a group.
+        """获取或创建群级短窗口缓存。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            Group-specific short reaction deque.
+            群专用的短窗口队列。
         """
         if group_id not in self.short_windows:
             self.short_windows[group_id] = deque(maxlen=self.short_window_size)
         return self.short_windows[group_id]
 
     def _get_reply_history(self, group_id: str) -> deque[str]:
-        """Get or create reply history for deduplication.
+        """获取或创建群级回复历史。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            Group-specific normalized reply deque.
+            群专用的归一化回复队列。
         """
         if group_id not in self.reply_history:
             self.reply_history[group_id] = deque(maxlen=self.dedup_window_size)
         return self.reply_history[group_id]
 
     def _normalize_text(self, text: str) -> str:
-        """Normalize reply text for lightweight deduplication.
+        """规范化文本，供轻量去重比较使用。
 
         Args:
-            text: Original text.
+            text: 原始文本。
 
         Returns:
-            Normalized comparison key.
+            归一化后的比较键。
         """
         lowered = text.lower().strip()
         lowered = re.sub(r"\s+", "", lowered)
@@ -629,15 +663,15 @@ class AgenticMemoryPlugin(Star):
         return lowered
 
     def _is_duplicate_reply(self, group_id: str, reply_text: str, channel: str) -> bool:
-        """Check whether a reply is duplicated under current dedup settings.
+        """判断当前回复在去重窗口里是否重复。
 
         Args:
-            group_id: Group identifier.
-            reply_text: Candidate reply text.
-            channel: Reply channel such as ``immediate`` or ``proactive``.
+            group_id: 群号。
+            reply_text: 待发送回复文本。
+            channel: 回复渠道，例如 ``immediate`` 或 ``proactive``。
 
         Returns:
-            ``True`` when the reply should be considered duplicated.
+            如果应视为重复回复则返回 ``True``。
         """
         if not self.dedup_enabled:
             return False
@@ -647,26 +681,26 @@ class AgenticMemoryPlugin(Star):
         return normalized in self._get_reply_history(group_id)
 
     def _record_reply_history(self, group_id: str, reply_text: str) -> None:
-        """Record a reply after it has been sent.
+        """在回复发送后记录到去重历史。
 
         Args:
-            group_id: Group identifier.
-            reply_text: Sent reply text.
+            group_id: 群号。
+            reply_text: 已发送的回复文本。
         """
         self._get_reply_history(group_id).append(self._normalize_text(reply_text))
 
     def _is_cooldown_ready(
         self, group_id: str, cooldown_key: str, seconds: int
     ) -> bool:
-        """Check whether a cooldown window has elapsed.
+        """判断某个冷却窗口是否已经结束。
 
         Args:
-            group_id: Group identifier.
-            cooldown_key: Logical cooldown key.
-            seconds: Cooldown duration.
+            group_id: 群号。
+            cooldown_key: 逻辑冷却键。
+            seconds: 冷却时长。
 
         Returns:
-            ``True`` when sending is allowed.
+            允许发送时返回 ``True``。
         """
         if seconds <= 0:
             return True
@@ -675,22 +709,88 @@ class AgenticMemoryPlugin(Star):
         return not last_time or (now - last_time).total_seconds() >= seconds
 
     def _mark_cooldown(self, group_id: str, cooldown_key: str) -> None:
-        """Record the current time for a cooldown key.
+        """记录某个冷却键的当前触发时间。
 
         Args:
-            group_id: Group identifier.
-            cooldown_key: Logical cooldown key.
+            group_id: 群号。
+            cooldown_key: 逻辑冷却键。
         """
         self.cooldowns[group_id][cooldown_key] = datetime.now()
 
-    def _extract_is_mentioned(self, event: AstrMessageEvent) -> bool:
-        """Detect whether the message directly @mentions the bot.
+    def _prune_cited_memories(self, group_id: str) -> set[int]:
+        """清理过期的已引用记忆 ID，并返回当前有效的 ID 集合。
 
         Args:
-            event: Incoming message event.
+            group_id: 群号。
 
         Returns:
-            ``True`` when the bot is directly mentioned.
+            当前仍在有效窗口内的已引用记忆 ID 集合。
+        """
+        now = datetime.now()
+        ttl_cutoff = now - timedelta(minutes=10)
+        fresh_ids: set[int] = set()
+        expired_ids: list[int] = []
+        for mid, ts in self.cited_memory_ids[group_id].items():
+            if ts >= ttl_cutoff:
+                fresh_ids.add(mid)
+            else:
+                expired_ids.append(mid)
+        for mid in expired_ids:
+            del self.cited_memory_ids[group_id][mid]
+        return fresh_ids
+
+    def _record_cited_memories(self, group_id: str, memory_ids: list[int]) -> None:
+        """把本轮召回的记忆 ID 记录为已引用。
+
+        Args:
+            group_id: 群号。
+            memory_ids: 本轮用到的记忆行 ID 列表。
+        """
+        now = datetime.now()
+        for mid in memory_ids:
+            self.cited_memory_ids[group_id][mid] = now
+
+    def _is_density_blocked(self, group_id: str) -> bool:
+        """判断当前是否因发言密度过高而应熔断非紧急回复。
+
+        当群消息频率极高且 bot 近期已发过言时，阻止非 immediate 渠道的回复，
+        避免 bot 在刷屏时还在插嘴。
+
+        Args:
+            group_id: 群号。
+
+        Returns:
+            应当熔断时返回 ``True``。
+        """
+        now = datetime.now()
+
+        arrival_window = self.message_arrival_times.get(group_id)
+        if not arrival_window:
+            return False
+        cutoff = now - timedelta(seconds=60)
+        recent_messages = sum(1 for t in arrival_window if t >= cutoff)
+        if recent_messages < 15:
+            return False
+
+        send_window = self.bot_send_times.get(group_id)
+        if send_window:
+            send_cutoff = now - timedelta(seconds=120)
+            recent_sends = sum(1 for t in send_window if t >= send_cutoff)
+            if recent_messages >= 25:
+                return True
+            if recent_messages >= 15 and recent_sends >= 1:
+                return True
+
+        return False
+
+    def _extract_is_mentioned(self, event: AstrMessageEvent) -> bool:
+        """识别消息是否直接 @ 了机器人。
+
+        Args:
+            event: 收到的消息事件。
+
+        Returns:
+            如果直接提及机器人则返回 ``True``。
         """
         if hasattr(event, "is_at") and getattr(event, "is_at"):
             return True
@@ -759,13 +859,13 @@ class AgenticMemoryPlugin(Star):
         return False
 
     def _extract_is_quoted(self, event: AstrMessageEvent) -> bool:
-        """Detect whether the message quotes or replies to a bot message.
+        """识别消息是否引用或回复了机器人的消息。
 
         Args:
-            event: Incoming message event.
+            event: 收到的消息事件。
 
         Returns:
-            ``True`` when the message quotes a bot message.
+            如果引用了机器人消息则返回 ``True``。
         """
         bot_id = str(event.get_self_id()).strip()
         if not bot_id:
@@ -816,13 +916,13 @@ class AgenticMemoryPlugin(Star):
         return False
 
     def _is_inner_thought_bracket(self, content: str) -> bool:
-        """Classify whether a bracket's content is a mental monologue.
+        """判断括号里的内容是不是内心独白。
 
         Args:
-            content: Text inside a bracket pair.
+            content: 括号中的文本。
 
         Returns:
-            ``True`` when the content should be treated as an inner thought and removed.
+            如果应视为内心独白并移除则返回 ``True``。
         """
         stripped = content.strip()
         if not stripped:
@@ -836,13 +936,13 @@ class AgenticMemoryPlugin(Star):
         return any(keyword in stripped for keyword in self._INNER_THOUGHT_KEYWORDS)
 
     def _filter_inner_thoughts(self, text: str) -> str:
-        """Remove inner-thought bracket segments from reply text.
+        """从回复文本中移除括号里的内心独白。
 
         Args:
-            text: Cleaned reply text.
+            text: 待清洗文本。
 
         Returns:
-            Text with inner-thought brackets removed.
+            去掉内心独白后的文本。
         """
         result = re.sub(
             r"[（(][^）)]*[）)]",
@@ -856,13 +956,13 @@ class AgenticMemoryPlugin(Star):
         return result
 
     def _sanitize_reply_text(self, text: str) -> str:
-        """Clean model output before sending it to the group.
+        """清洗模型输出，避免把脏格式直接发群里。
 
         Args:
-            text: Raw generated reply text.
+            text: 原始生成文本。
 
         Returns:
-            Sanitized reply text.
+            清洗后的回复文本。
         """
         cleaned = str(text).strip()
         if not cleaned:
@@ -943,14 +1043,14 @@ class AgenticMemoryPlugin(Star):
         *,
         title: str,
     ) -> str:
-        """Render chat messages as quoted, untrusted input.
+        """把聊天消息渲染为明确标注的引用输入。
 
         Args:
-            messages: Chat message items to render.
-            title: Section title used in the rendered block.
+            messages: 要渲染的聊天消息。
+            title: 渲染块标题。
 
         Returns:
-            Structured text block with explicit boundaries.
+            带边界标记的结构化文本块。
         """
         lines = [
             f"【{title}】",
@@ -965,13 +1065,13 @@ class AgenticMemoryPlugin(Star):
         return "\n".join(lines)
 
     def _looks_like_prompt_injection(self, text: str) -> bool:
-        """Detect whether a chat line looks like prompt injection.
+        """识别聊天内容是否像提示词注入。
 
         Args:
-            text: Raw chat content.
+            text: 原始聊天文本。
 
         Returns:
-            ``True`` when the content contains rule rewriting or identity override cues.
+            如果包含改规则、改身份等痕迹则返回 ``True``。
         """
         if not text:
             return False
@@ -980,13 +1080,13 @@ class AgenticMemoryPlugin(Star):
         )
 
     def _mark_prompt_injection(self, text: str) -> str:
-        """Mark suspicious chat content as untrusted noise.
+        """把可疑聊天内容标成不可信噪声。
 
         Args:
-            text: Raw chat content.
+            text: 原始聊天文本。
 
         Returns:
-            Redacted content with an explicit warning prefix.
+            带有警告前缀的降权文本。
         """
         cleaned = re.sub(r"\s+", " ", str(text)).strip()
         if not cleaned:
@@ -1000,14 +1100,14 @@ class AgenticMemoryPlugin(Star):
         event: AstrMessageEvent,
         message_text: str,
     ) -> dict[str, Any]:
-        """Build direct trigger signals from a new group message.
+        """从群消息中构建直接触发状态。
 
         Args:
-            event: Incoming message event.
-            message_text: Plain message text.
+            event: 收到的消息事件。
+            message_text: 纯文本消息。
 
         Returns:
-            Trigger state dictionary used by immediate and short-window logic.
+            供即时回复和短窗口逻辑使用的触发字典。
         """
         lowered = message_text.lower()
         name_hit = any(name.lower() in lowered for name in self.bot_names if name)
@@ -1032,13 +1132,13 @@ class AgenticMemoryPlugin(Star):
         message_text: str,
         trigger_state: dict[str, Any],
     ) -> None:
-        """Append a message to both the long buffer and short reaction window.
+        """把消息同时写入长窗口和短窗口。
 
         Args:
-            group_id: Group identifier.
-            sender_name: Sender nickname.
-            message_text: Plain message text.
-            trigger_state: Precomputed trigger state.
+            group_id: 群号。
+            sender_name: 发送者昵称。
+            message_text: 纯文本消息。
+            trigger_state: 预先计算好的触发状态。
         """
         message_item = {
             "sender": sender_name,
@@ -1052,10 +1152,10 @@ class AgenticMemoryPlugin(Star):
         self._get_short_window(group_id).append(message_item)
 
     def _prune_short_window(self, group_id: str) -> None:
-        """Drop expired short-window messages before trigger evaluation.
+        """在短窗口判定前清理过期消息。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
         """
         window = self._get_short_window(group_id)
         if not window:
@@ -1077,13 +1177,13 @@ class AgenticMemoryPlugin(Star):
             window.popleft()
 
     def _is_identity_topic(self, text: str) -> bool:
-        """Check whether text is mainly asking about the bot identity.
+        """判断文本是否主要在问机器人身份。
 
         Args:
-            text: Topic or message text.
+            text: 话题或消息文本。
 
         Returns:
-            ``True`` when the text is an identity or self-introduction topic.
+            如果属于身份 / 自我介绍话题则返回 ``True``。
         """
         normalized = str(text).strip().lower()
         if not normalized:
@@ -1109,13 +1209,13 @@ class AgenticMemoryPlugin(Star):
         )
 
     def _is_weak_followup_message(self, text: str) -> bool:
-        """Check whether one message mainly relies on previous context.
+        """判断消息是否主要依赖前文上下文。
 
         Args:
-            text: Message text to inspect.
+            text: 待检查的消息文本。
 
         Returns:
-            ``True`` when the message is a short continuation such as ``你呢``.
+            如果属于“你呢”这类短承接句则返回 ``True``。
         """
         normalized = re.sub(r"\s+", "", str(text)).strip("，。！？,.!?；;：:~～-")
         if not normalized:
@@ -1156,15 +1256,15 @@ class AgenticMemoryPlugin(Star):
         recent_context: list[dict[str, Any]],
         channel: str,
     ) -> tuple[str, list[dict[str, Any]], str]:
-        """Resolve the actual reply focus from the latest topic and context.
+        """根据最新话题和上下文确定真正要回答的焦点。
 
         Args:
-            topic: Raw topic passed into the reply builder.
-            recent_context: Recent context messages.
-            channel: Reply channel.
+            topic: 传给回复生成器的原始话题。
+            recent_context: 最近上下文消息。
+            channel: 回复渠道。
 
         Returns:
-            Tuple of effective topic, focused context slice, and a focus note.
+            有效话题、聚焦上下文切片、以及说明文本。
         """
         raw_topic = str(topic).strip()
         if channel == "proactive":
@@ -1247,13 +1347,13 @@ class AgenticMemoryPlugin(Star):
         )
 
     def _build_short_window_topic(self, recent_context: list[dict[str, Any]]) -> str:
-        """Build a raw short-window topic from the latest live context.
+        """从最近上下文里提取短窗口回复话题。
 
         Args:
-            recent_context: Recent context messages.
+            recent_context: 最近上下文消息。
 
         Returns:
-            Latest non-empty message text when available.
+            最新的非空消息文本；没有时返回默认话题。
         """
         latest_message = ""
         for item in reversed(recent_context):
@@ -1267,13 +1367,13 @@ class AgenticMemoryPlugin(Star):
         return latest_message
 
     def _pop_long_window_batch(self, group_id: str) -> list[dict[str, Any]] | None:
-        """Pop a long-window batch when the configured threshold is reached.
+        """达到阈值后弹出一批长窗口消息用于后台分析。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            Copied batch for background analysis, or ``None`` when not ready.
+            复制出来的分析批次；未就绪则返回 ``None``。
         """
         buffer = self.message_buffers[group_id]
         if len(buffer) < self.threshold:
@@ -1288,14 +1388,14 @@ class AgenticMemoryPlugin(Star):
         group_id: str,
         trigger_state: dict[str, Any],
     ) -> str:
-        """Find a configured special reply that matches the current trigger state.
+        """查找与当前触发状态匹配的特殊回复。
 
         Args:
-            group_id: Group identifier.
-            trigger_state: Trigger state dictionary.
+            group_id: 群号。
+            trigger_state: 触发状态字典。
 
         Returns:
-            Selected canned reply or an empty string.
+            匹配到的预设回复；没有则返回空字符串。
         """
         if not self.special_reply_settings.get("enabled", True):
             return ""
@@ -1367,13 +1467,13 @@ class AgenticMemoryPlugin(Star):
         return ""
 
     def _should_trigger_short_window(self, group_id: str) -> bool:
-        """Decide whether the short reaction window should trigger a reply.
+        """判断短窗口是否满足插话条件。
 
         Args:
-            group_id: Group identifier.
+            group_id: 群号。
 
         Returns:
-            ``True`` when the short window should trigger.
+            短窗口满足条件时返回 ``True``。
         """
         if not self.short_window_enabled:
             return False
@@ -1392,13 +1492,13 @@ class AgenticMemoryPlugin(Star):
         )
 
     def _extract_balanced_json_fragment(self, text: str) -> str:
-        """Extract the first balanced JSON object fragment from text.
+        """从文本中提取第一个括号平衡的 JSON 片段。
 
         Args:
-            text: Raw text that may contain JSON.
+            text: 可能包含 JSON 的原始文本。
 
         Returns:
-            Balanced JSON object text or an empty string.
+            平衡的 JSON 对象文本；没有则返回空字符串。
         """
         for start_index, char in enumerate(text):
             if char != "{":
@@ -1434,14 +1534,14 @@ class AgenticMemoryPlugin(Star):
         response_text: str,
         log_failure: bool = True,
     ) -> dict[str, Any]:
-        """Parse model JSON output as safely as possible.
+        """尽可能安全地解析模型 JSON 输出。
 
         Args:
-            response_text: Raw model text.
-            log_failure: Whether to emit warning logs when parsing still fails.
+            response_text: 模型原始文本。
+            log_failure: 解析仍失败时是否记录警告。
 
         Returns:
-            Parsed dictionary or an empty dict.
+            解析出的字典；失败则返回空字典。
         """
         cleaned = response_text.strip()
         cleaned = cleaned.replace("```json", "").replace("```", "").strip()
@@ -1529,18 +1629,18 @@ class AgenticMemoryPlugin(Star):
         cooldown_key: str | None = None,
         use_group_direct_send: bool = False,
     ) -> bool:
-        """Send a reply and record dedup/cooldown state.
+        """发送回复，并记录去重和冷却状态。
 
         Args:
-            event: Incoming message event when a reply context is available.
-            group_id: Group identifier.
-            reply_text: Reply text.
-            channel: Reply channel such as ``immediate`` or ``proactive``.
-            cooldown_key: Optional cooldown key to mark after sending.
-            use_group_direct_send: Whether to send directly to the target group id.
+            event: 有回复上下文时传入的消息事件。
+            group_id: 群号。
+            reply_text: 回复文本。
+            channel: 回复渠道，例如 ``immediate`` 或 ``proactive``。
+            cooldown_key: 发送后要标记的冷却键。
+            use_group_direct_send: 是否直接向目标群发送。
 
         Returns:
-            ``True`` when the message was sent successfully.
+            发送成功时返回 ``True``。
         """
         raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
@@ -1577,6 +1677,14 @@ class AgenticMemoryPlugin(Star):
             )
             return False
 
+        if channel != "immediate" and self._is_density_blocked(group_id):
+            self._log(
+                "info",
+                "[agentic_memory] Reply blocked by message density throttle. "
+                f"group={group_id}, channel={channel}",
+            )
+            return False
+
         try:
             if use_group_direct_send:
                 session = self.group_sessions.get(group_id)
@@ -1608,16 +1716,19 @@ class AgenticMemoryPlugin(Star):
             return False
 
         self._record_reply_history(group_id, reply_text)
+
+        self._record_bot_send_timestamp(group_id)
+
         if cooldown_key:
             self._mark_cooldown(group_id, cooldown_key)
         self._log("info", f"[{channel}] Sent reply in group {group_id}: {reply_text}")
         return True
 
     def _stop_event_flow(self, event: AstrMessageEvent) -> None:
-        """Stop downstream event propagation when possible.
+        """尽量阻断后续事件流，避免别的逻辑重复处理。
 
         Args:
-            event: Incoming message event.
+            event: 收到的消息事件。
         """
         should_call_llm = getattr(event, "should_call_llm", None)
         if callable(should_call_llm):
@@ -1633,11 +1744,10 @@ class AgenticMemoryPlugin(Star):
             stop_event()
 
     def _normalize_proactive_tasks(self) -> list[dict[str, Any]]:
-        """Normalize scheduled proactive talk tasks from config.
+        """把配置里的主动发言任务整理成统一结构。
 
         Returns:
-            Enabled task definitions with validated ids, times, parsed clock parts,
-            and messages.
+            经过校验的任务定义列表。
         """
         if not self.proactive_talk_settings.get("enabled", False):
             return []
@@ -1814,15 +1924,15 @@ class AgenticMemoryPlugin(Star):
         target_day: datetime,
         earliest_time: datetime | None = None,
     ) -> datetime:
-        """Pick one execution time for a proactive task on a specific date.
+        """在指定日期内挑选一个主动发言执行时间。
 
         Args:
-            task: Normalized proactive task config.
-            target_day: Datetime whose date is used for the target run day.
-            earliest_time: Optional lower bound for random window scheduling.
+            task: 归一化后的主动发言任务配置。
+            target_day: 作为目标执行日期的时间对象。
+            earliest_time: 随机时间窗调度的可选下界。
 
         Returns:
-            Target execution datetime on the requested day.
+            目标日期上的执行时间。
         """
         fixed_hour = task.get("fixed_hour")
         fixed_minute = task.get("fixed_minute")
@@ -1865,16 +1975,15 @@ class AgenticMemoryPlugin(Star):
         task: dict[str, Any],
         now: datetime,
     ) -> datetime:
-        """Get the next stable planned execution time for one task and group.
+        """获取某群某任务稳定的计划执行时间。
 
         Args:
-            group_id: Target group id.
-            task: Normalized proactive task config.
-            now: Current datetime.
+            group_id: 目标群号。
+            task: 归一化后的主动发言任务配置。
+            now: 当前时间。
 
         Returns:
-            Stable future execution time, or the already-planned overdue time when
-            the task is waiting for a retry on the same day.
+            稳定的未来执行时间；若当天已计划过，则返回原计划时间。
         """
         task_id = str(task["task_id"])
         planned_time = self.proactive_task_planned_times[group_id].get(task_id)
@@ -1929,10 +2038,10 @@ class AgenticMemoryPlugin(Star):
         return planned_time
 
     def _get_allowed_proactive_groups(self) -> list[str]:
-        """Get the default groups that scheduled proactive tasks may send to.
+        """获取主动发言允许发送的默认群列表。
 
         Returns:
-            Default proactive target group id list from proactive config.
+            主动发言配置里的默认群号列表。
         """
         default_group_ids = self.proactive_talk_settings.get("default_group_ids", [])
         merged_groups: list[str] = []
@@ -1952,16 +2061,15 @@ class AgenticMemoryPlugin(Star):
         reply_text: str,
         task_id: str,
     ) -> str:
-        """Send a scheduled proactive message to one group.
+        """向某个群发送一次定时主动消息。
 
         Args:
-            group_id: Target group id.
-            reply_text: Message text to send.
-            task_id: Proactive task identifier.
+            group_id: 目标群号。
+            reply_text: 要发送的消息文本。
+            task_id: 主动发言任务 ID。
 
         Returns:
-            Status string: ``sent``, ``skipped``, ``retryable_failure``, or
-            ``fatal_failure``.
+            状态字符串：``sent``、``skipped``、``retryable_failure`` 或 ``fatal_failure``。
         """
         raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
@@ -2024,6 +2132,9 @@ class AgenticMemoryPlugin(Star):
             return "fatal_failure" if fatal_error else "retryable_failure"
 
         self._record_reply_history(group_id, reply_text)
+
+        self._record_bot_send_timestamp(group_id)
+
         self._log(
             "info",
             "[scheduled_proactive] Sent reply. "
@@ -2032,7 +2143,7 @@ class AgenticMemoryPlugin(Star):
         return "sent"
 
     async def _run_due_proactive_tasks(self) -> None:
-        """Run proactive talk tasks that are due right now."""
+        """执行当前已到点的主动发言任务。"""
         tasks = self._normalize_proactive_tasks()
         if not tasks:
             return
@@ -2146,7 +2257,7 @@ class AgenticMemoryPlugin(Star):
                 )
 
     async def _cron_proactive_talk(self) -> None:
-        """Run scheduled proactive talk tasks in the background."""
+        """后台循环调度主动发言任务。"""
         self._log("info", "[agentic_memory] Proactive talk scheduler started.")
         while True:
             try:
@@ -2157,14 +2268,331 @@ class AgenticMemoryPlugin(Star):
                 )
             await asyncio.sleep(30)
 
-    def _format_db_time(self, value: str | None) -> str:
-        """Format one database timestamp into a more human-readable string.
+    def _record_bot_send_timestamp(self, group_id: str) -> None:
+        """记录 bot 发送消息的时间，供发言密度熔断使用。
 
         Args:
-            value: Timestamp text from SQLite.
+            group_id: 群号。
+        """
+        if group_id not in self.bot_send_times:
+            self.bot_send_times[group_id] = deque(maxlen=20)
+        self.bot_send_times[group_id].append(datetime.now())
+
+    def _normalize_news_selfie_tasks(self) -> list[dict[str, Any]]:
+        """Parse news_selfie_settings.tasks into a normalized list.
 
         Returns:
-            Formatted timestamp text.
+            List of normalized task dicts with task_id, enabled, fixed_hour,
+            fixed_minute, range_start_hour, range_start_minute, range_end_hour,
+            range_end_minute. Falls back to a single check_time task if no tasks
+            are configured.
+        """
+        news_settings = self.config.get("news_selfie_settings", {})
+        raw_tasks: list[dict[str, Any]] = []
+        tasks_value = news_settings.get("tasks")
+        if isinstance(tasks_value, list) and tasks_value:
+            raw_tasks = tasks_value
+
+        if not raw_tasks:
+            check_time_str = str(news_settings.get("check_time", "08:00")).strip()
+            if re.fullmatch(r"\d{2}:\d{2}", check_time_str):
+                hour_text, minute_text = check_time_str.split(":")
+                hour = int(hour_text)
+                minute = int(minute_text)
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return [
+                        {
+                            "task_id": "daily_news",
+                            "enabled": True,
+                            "fixed_hour": hour,
+                            "fixed_minute": minute,
+                            "range_start_hour": None,
+                            "range_start_minute": None,
+                            "range_end_hour": None,
+                            "range_end_minute": None,
+                        }
+                    ]
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for task in raw_tasks:
+            if not isinstance(task, dict) or not task.get("enabled", True):
+                continue
+
+            task_id = str(task.get("task_id", "")).strip()
+            if not task_id:
+                continue
+
+            fixed_time = str(task.get("time", "")).strip()
+            range_start = str(task.get("time_range_start", "")).strip()
+            range_end = str(task.get("time_range_end", "")).strip()
+
+            if fixed_time and re.fullmatch(r"\d{2}:\d{2}", fixed_time):
+                hour_text, minute_text = fixed_time.split(":")
+                fh, fm = int(hour_text), int(minute_text)
+                if 0 <= fh <= 23 and 0 <= fm <= 59:
+                    normalized.append(
+                        {
+                            "task_id": task_id,
+                            "enabled": True,
+                            "fixed_hour": fh,
+                            "fixed_minute": fm,
+                            "range_start_hour": None,
+                            "range_start_minute": None,
+                            "range_end_hour": None,
+                            "range_end_minute": None,
+                        }
+                    )
+                    continue
+
+            if (
+                range_start
+                and range_end
+                and re.fullmatch(r"\d{2}:\d{2}", range_start)
+                and re.fullmatch(r"\d{2}:\d{2}", range_end)
+            ):
+                rsh, rsm = (int(p) for p in range_start.split(":"))
+                reh, rem = (int(p) for p in range_end.split(":"))
+                if not (
+                    0 <= rsh <= 23
+                    and 0 <= rsm <= 59
+                    and 0 <= reh <= 23
+                    and 0 <= rem <= 59
+                ):
+                    continue
+                if (reh, rem) <= (rsh, rsm):
+                    continue
+                normalized.append(
+                    {
+                        "task_id": task_id,
+                        "enabled": True,
+                        "fixed_hour": None,
+                        "fixed_minute": None,
+                        "range_start_hour": rsh,
+                        "range_start_minute": rsm,
+                        "range_end_hour": reh,
+                        "range_end_minute": rem,
+                    }
+                )
+
+        return normalized
+
+    def _pick_news_selfie_task_time(
+        self,
+        task: dict[str, Any],
+        target_day: datetime,
+        earliest_time: datetime | None = None,
+    ) -> datetime:
+        """Pick the execution time for a news selfie task on a given day.
+
+        Args:
+            task: Normalized task dict.
+            target_day: Reference day for scheduling.
+            earliest_time: Optional lower bound for random time window.
+
+        Returns:
+            Scheduled datetime on target_day.
+        """
+        fh = task.get("fixed_hour")
+        fm = task.get("fixed_minute")
+        if fh is not None and fm is not None:
+            return target_day.replace(
+                hour=int(fh), minute=int(fm), second=0, microsecond=0
+            )
+
+        rsh = int(task["range_start_hour"])
+        rsm = int(task["range_start_minute"])
+        reh = int(task["range_end_hour"])
+        rem = int(task["range_end_minute"])
+
+        start_dt = target_day.replace(hour=rsh, minute=rsm, second=0, microsecond=0)
+        end_dt = target_day.replace(hour=reh, minute=rem, second=0, microsecond=0)
+
+        if earliest_time and earliest_time.date() == target_day.date():
+            earliest_candidate = (earliest_time + timedelta(minutes=1)).replace(
+                second=0, microsecond=0
+            )
+            start_dt = max(start_dt, earliest_candidate)
+
+        total_seconds = int((end_dt - start_dt).total_seconds())
+        if total_seconds <= 0:
+            return start_dt
+        random_seconds = random.randint(0, total_seconds)
+        return start_dt + timedelta(seconds=random_seconds)
+
+    async def _cron_news_selfie(self) -> None:
+        """后台按任务配置定时执行新闻自拍管道。
+
+        每个任务每天最多执行一次。支持固定时间和随机时间窗口。
+        """
+        if not self.news_selfie_pipeline:
+            return
+
+        self._log("info", "[agentic_memory] News selfie scheduler started.")
+
+        _first_run_done = False
+
+        while True:
+            now = datetime.now()
+            today_text = now.strftime("%Y-%m-%d")
+            tasks = self._normalize_news_selfie_tasks()
+
+            for task in tasks:
+                task_id = str(task["task_id"])
+                if self.news_selfie_task_last_run_dates.get(task_id) != today_text:
+                    if task_id in self.news_selfie_task_planned_times:
+                        planned = self.news_selfie_task_planned_times[task_id]
+                        if planned.date() != now.date():
+                            del self.news_selfie_task_planned_times[task_id]
+                    if task_id in self.news_selfie_task_last_run_dates:
+                        self.news_selfie_task_last_run_dates.pop(task_id, None)
+
+            next_run: datetime | None = None
+            next_task: dict[str, Any] | None = None
+
+            for task in tasks:
+                task_id = str(task["task_id"])
+                if self.news_selfie_task_last_run_dates.get(task_id) == today_text:
+                    continue
+
+                if task_id not in self.news_selfie_task_planned_times:
+                    self.news_selfie_task_planned_times[task_id] = (
+                        self._pick_news_selfie_task_time(task, now)
+                    )
+
+                planned = self.news_selfie_task_planned_times[task_id]
+                if planned < now and planned.date() == now.date():
+                    self.news_selfie_task_planned_times[task_id] = (
+                        self._pick_news_selfie_task_time(task, now, earliest_time=now)
+                    )
+                    planned = self.news_selfie_task_planned_times[task_id]
+
+                if next_run is None or planned < next_run:
+                    next_run = planned
+                    next_task = task
+
+            if next_run is None or next_task is None:
+                wait_seconds = 3600
+            else:
+                wait_seconds = max(30, int((next_run - now).total_seconds()))
+
+            self._log(
+                "info",
+                f"[news_selfie] Next run at {next_run.isoformat(timespec='seconds') if next_run else 'unknown'}, "
+                f"sleeping {wait_seconds / 60:.1f} min.",
+            )
+            await asyncio.sleep(wait_seconds)
+
+            now = datetime.now()
+            today_text = now.strftime("%Y-%m-%d")
+            tasks = self._normalize_news_selfie_tasks()
+
+            for task in tasks:
+                task_id = str(task["task_id"])
+                if self.news_selfie_task_last_run_dates.get(task_id) == today_text:
+                    continue
+
+                if task_id not in self.news_selfie_task_planned_times:
+                    continue
+                planned = self.news_selfie_task_planned_times[task_id]
+                if now < planned:
+                    continue
+                if abs((now - planned).total_seconds()) > 90:
+                    continue
+
+                self._log(
+                    "info",
+                    f"[news_selfie] Triggering task {task_id} at {now.isoformat(timespec='seconds')}",
+                )
+                try:
+                    results = await self.news_selfie_pipeline.run()
+                except Exception as exc:
+                    self._log("error", f"[news_selfie] Pipeline failed: {exc}")
+                    self.news_selfie_task_last_run_dates[task_id] = today_text
+                    continue
+
+                self.news_selfie_task_last_run_dates[task_id] = today_text
+                self.news_selfie_task_planned_times.pop(task_id, None)
+
+                if not results:
+                    self._log(
+                        "info",
+                        f"[news_selfie] No result for task {task_id}.",
+                    )
+                    continue
+
+                news_settings = self.config.get("news_selfie_settings", {})
+                configured_groups: list[str] = []
+                group_ids_raw = news_settings.get("group_ids")
+                if isinstance(group_ids_raw, list):
+                    configured_groups = [
+                        str(g).strip() for g in group_ids_raw if str(g).strip()
+                    ]
+                if not configured_groups:
+                    configured_groups = self._get_allowed_proactive_groups()
+
+                if not configured_groups:
+                    self._log(
+                        "warning",
+                        "[news_selfie] No groups configured for sending.",
+                    )
+                    continue
+
+                if not _first_run_done and not self.group_sessions:
+                    self._log(
+                        "error",
+                        "[news_selfie] group_sessions is empty — no group message "
+                        "has been received since plugin start. News selfie will "
+                        "silently skip all groups. Ensure the bot receives at least "
+                        "one message from each target group.",
+                    )
+                _first_run_done = True
+
+                for group_id in configured_groups:
+                    if not self._is_group_allowed(group_id):
+                        continue
+
+                    try:
+                        session = self.group_sessions.get(group_id)
+                        if not session:
+                            self._log(
+                                "warning",
+                                f"[news_selfie] No cached session for group {group_id}, skip.",
+                            )
+                            continue
+
+                        for result in results:
+                            text = str(result.get("text", "")).strip()
+                            image_path = result.get("image_path")
+                            news_image = result.get("news_image")
+
+                            chain = MessageChain()
+                            if text:
+                                chain.message(text)
+                            if image_path and Path(image_path).exists():
+                                chain.file_image(image_path)
+                            elif news_image and Path(news_image).exists():
+                                chain.file_image(news_image)
+
+                            await StarTools.send_message(session, chain)
+                            self._log(
+                                "info",
+                                f"[news_selfie] Sent selfie to group {group_id}: {text[:80]}",
+                            )
+                    except Exception as exc:
+                        self._log(
+                            "error",
+                            f"[news_selfie] Failed to send to group {group_id}: {exc}",
+                        )
+
+    def _format_db_time(self, value: str | None) -> str:
+        """把数据库时间格式化成人类更容易读的样子。
+
+        Args:
+            value: SQLite 里的时间文本。
+
+        Returns:
+            格式化后的时间文本。
         """
         if not value:
             return "unknown time"
@@ -2174,13 +2602,13 @@ class AgenticMemoryPlugin(Star):
         return parsed.strftime("%Y-%m-%d %H:%M")
 
     def _parse_db_time(self, value: str | None) -> datetime | None:
-        """Parse one database timestamp string.
+        """解析数据库里的时间字符串。
 
         Args:
-            value: Timestamp text.
+            value: 时间文本。
 
         Returns:
-            Parsed datetime or ``None`` when parsing fails.
+            解析后的时间；失败时返回 ``None``。
         """
         if not value:
             return None
@@ -2192,14 +2620,14 @@ class AgenticMemoryPlugin(Star):
         return None
 
     def _shift_months(self, moment: datetime, months: int) -> datetime:
-        """Shift one datetime by whole months while keeping a valid day.
+        """按整月平移时间，并尽量保住合法日期。
 
         Args:
-            moment: Base datetime.
-            months: Month delta, may be negative.
+            moment: 基准时间。
+            months: 月份偏移量，可为负数。
 
         Returns:
-            Shifted datetime.
+            平移后的时间。
         """
         month_index = moment.month - 1 + months
         year = moment.year + month_index // 12
@@ -2210,14 +2638,14 @@ class AgenticMemoryPlugin(Star):
     def _extract_memory_keywords(
         self, topic: str, recent_context: list[dict[str, Any]]
     ) -> list[str]:
-        """Extract lightweight event keywords from topic and context.
+        """从话题和上下文里抽取轻量级记忆关键词。
 
         Args:
-            topic: Current topic text.
-            recent_context: Recent chat context.
+            topic: 当前话题文本。
+            recent_context: 最近聊天上下文。
 
         Returns:
-            Deduplicated keyword list.
+            去重后的关键词列表。
         """
         combined_text = " ".join(
             [topic] + [str(item.get("msg", "")) for item in recent_context]
@@ -2259,14 +2687,14 @@ class AgenticMemoryPlugin(Star):
     def _resolve_time_recall_window(
         self, topic: str, now: datetime
     ) -> tuple[str, datetime, datetime] | None:
-        """Resolve fuzzy time expressions into a recall window.
+        """把模糊时间表达式解析成召回窗口。
 
         Args:
-            topic: Current topic text.
-            now: Current datetime.
+            topic: 当前话题文本。
+            now: 当前时间。
 
         Returns:
-            Tuple of description, start time, and end time, or ``None``.
+            描述、开始时间和结束时间的三元组；无法解析时返回 ``None``。
         """
         text = topic.strip()
         if not text:
@@ -2358,13 +2786,13 @@ class AgenticMemoryPlugin(Star):
         return None
 
     def _row_anchor_times(self, row: tuple[Any, ...]) -> tuple[str | None, str | None]:
-        """Resolve one summary row into anchor period bounds.
+        """从一条摘要行里提取时间锚点范围。
 
         Args:
-            row: Summary row returned by the database layer.
+            row: 数据库层返回的摘要行。
 
         Returns:
-            Tuple of start and end timestamp text.
+            开始和结束时间文本。
         """
         start_time = None
         end_time = None
@@ -2379,14 +2807,14 @@ class AgenticMemoryPlugin(Star):
     def _summaries_to_lines(
         self, rows: list[tuple[Any, ...]], include_layer: bool = True
     ) -> list[str]:
-        """Convert summary rows into prompt-friendly bullet lines.
+        """把摘要行转换成适合塞进 prompt 的条目行。
 
         Args:
-            rows: Summary rows.
-            include_layer: Whether to include the memory layer name.
+            rows: 摘要行列表。
+            include_layer: 是否带上记忆层级名称。
 
         Returns:
-            Bullet line list.
+            条目行列表。
         """
         lines: list[str] = []
         for row in rows:
@@ -2415,15 +2843,15 @@ class AgenticMemoryPlugin(Star):
         topic: str,
         recent_context: list[dict[str, Any]],
     ) -> str:
-        """Build a fuzzy human-like memory recall block for the reply prompt.
+        """构造一段像人类回忆的记忆召回块。
 
         Args:
-            group_id: Group identifier.
-            topic: Current topic text.
-            recent_context: Recent messages.
+            group_id: 群号。
+            topic: 当前话题文本。
+            recent_context: 最近消息。
 
         Returns:
-            Recall block text.
+            记忆召回文本块。
         """
         if not self.memory_lookup_enabled:
             return "【Memory recall】\n- Disabled"
@@ -2433,6 +2861,7 @@ class AgenticMemoryPlugin(Star):
         used_ids: list[int] = []
         anchor_start_text = None
         anchor_end_text = None
+        cited_ids = self._prune_cited_memories(group_id)
 
         recent_paragraph_rows = self.db.get_summaries(
             group_id,
@@ -2559,6 +2988,16 @@ class AgenticMemoryPlugin(Star):
                     recall_lines.append("Nearby memories from the same period:")
                     recall_lines.extend(self._summaries_to_lines(neighbor_rows))
 
+        if cited_ids and used_ids:
+            overlap_ids = [mid for mid in used_ids if mid in cited_ids]
+            if overlap_ids:
+                recall_lines.append(
+                    f"【注意】以上有 {len(overlap_ids)} 条记忆在最近已引用过，"
+                    "这次回复时请尽量避免再重复地说这些事。"
+                )
+
+        self._record_cited_memories(group_id, used_ids)
+
         if not recall_lines:
             return "【Memory recall】\n- None"
 
@@ -2571,16 +3010,16 @@ class AgenticMemoryPlugin(Star):
         recent_context: list[dict[str, Any]],
         channel: str,
     ) -> str:
-        """Generate a chat-style reply using summaries, profiles, and current context.
+        """结合摘要、用户画像和当前上下文生成群聊回复。
 
         Args:
-            group_id: Group identifier.
-            topic: Trigger topic or direct message.
-            recent_context: Recent context messages.
-            channel: Reply channel.
+            group_id: 群号。
+            topic: 触发话题或直接消息。
+            recent_context: 最近上下文消息。
+            channel: 回复渠道。
 
         Returns:
-            Generated reply text.
+            生成的回复文本。
         """
         effective_topic, focused_context, focus_note = self._resolve_reply_focus(
             topic,
@@ -2814,14 +3253,14 @@ class AgenticMemoryPlugin(Star):
         group_id: str,
         chat_batch: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Analyze a long-window chat batch for memory updates and proactive topics.
+        """分析长窗口消息，为记忆更新和主动插话提炼结构化结果。
 
         Args:
-            group_id: Group identifier.
-            chat_batch: Long-window raw messages.
+            group_id: 群号。
+            chat_batch: 长窗口原始消息。
 
         Returns:
-            Parsed analysis result dictionary.
+            解析后的分析结果字典。
         """
         chat_text = self._quote_chat_messages(
             chat_batch,
@@ -2888,14 +3327,14 @@ class AgenticMemoryPlugin(Star):
         return self._parse_json_response(retry_response_text)
 
     async def _merge_old_events(self, event_one: str, event_two: str) -> str:
-        """Merge two old dynamic events into one short memory line.
+        """把两条旧动态事件合并成一条短记忆。
 
         Args:
-            event_one: Older event text.
-            event_two: Second older event text.
+            event_one: 第一条旧事件文本。
+            event_two: 第二条旧事件文本。
 
         Returns:
-            Merged short event text.
+            合并后的短事件文本。
         """
         prompt = (
             f"请把下面两件旧事压缩成一句不超过 {self.dynamic_event_merge_target_length} 字的短句，"
@@ -2920,11 +3359,11 @@ class AgenticMemoryPlugin(Star):
         group_id: str,
         chat_batch: list[dict[str, Any]],
     ) -> None:
-        """Process long-window memory analysis and optional proactive reply.
+        """处理长窗口记忆分析，并决定是否顺手主动接话。
 
         Args:
-            group_id: Group identifier.
-            chat_batch: Long-window batch.
+            group_id: 群号。
+            chat_batch: 长窗口批次。
         """
         try:
             llm_result = await self._call_llm_for_analysis(group_id, chat_batch)
@@ -3128,13 +3567,13 @@ class AgenticMemoryPlugin(Star):
             self._log("error", f"Background memory task failed: {exc}")
 
     def _extract_media_from_event(self, event: AstrMessageEvent) -> dict[str, Any]:
-        """Extract image URLs, face IDs, and media descriptions from the event.
+        """从事件里提取图片 URL 和表情描述。
 
         Args:
-            event: Incoming message event.
+            event: 收到的消息事件。
 
         Returns:
-            Dictionary with ``text``, ``image_urls``, and ``face_descriptions``.
+            包含 ``image_urls`` 和 ``face_descriptions`` 的字典。
         """
         image_urls: list[str] = []
         face_descriptions: list[str] = []
@@ -3177,14 +3616,14 @@ class AgenticMemoryPlugin(Star):
     async def _describe_images(
         self, image_urls: list[str], context_hint: str = ""
     ) -> str:
-        """Describe images using a vision-capable model.
+        """调用视觉模型为图片生成简短中文描述。
 
         Args:
-            image_urls: List of image URLs to describe.
-            context_hint: Optional context about the images.
+            image_urls: 要描述的图片 URL 列表。
+            context_hint: 图片的可选上下文。
 
         Returns:
-            Combined image description text, or empty string on failure.
+            合并后的图片描述文本；失败时返回空字符串。
         """
         if not image_urls:
             return ""
@@ -3202,7 +3641,7 @@ class AgenticMemoryPlugin(Star):
             )
             try:
                 desc = await self.router.text_chat(
-                    role="chat",
+                    role="vision",
                     prompt=prompt,
                     system_prompt="You describe images concisely in Chinese.",
                     image_urls=[url],
@@ -3220,10 +3659,10 @@ class AgenticMemoryPlugin(Star):
 
     @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent) -> None:
-        """Handle group messages for whitelist, immediate reply, and memory logic.
+        """群消息入口：白名单、触发判断、回复和记忆都从这里开始。
 
         Args:
-            event: Incoming message event.
+            event: 收到的消息事件。
         """
         if not hasattr(event, "message_obj"):
             self._log("warning", "[agentic_memory] Group event has no message_obj.")
@@ -3248,6 +3687,10 @@ class AgenticMemoryPlugin(Star):
 
         if group_id not in self.group_sessions:
             self.group_sessions[group_id] = str(event.session)
+
+        if group_id not in self.message_arrival_times:
+            self.message_arrival_times[group_id] = deque(maxlen=60)
+        self.message_arrival_times[group_id].append(datetime.now())
 
         message_text = event.message_str.strip() if event.message_str else ""
         if not message_text:
@@ -3394,13 +3837,13 @@ class AgenticMemoryPlugin(Star):
                 )
 
     async def _call_compression_text(self, prompt: str) -> str:
-        """Call the compression role for memory folding tasks.
+        """调用压缩角色执行记忆折叠。
 
         Args:
-            prompt: Compression prompt.
+            prompt: 压缩提示词。
 
         Returns:
-            Compressed text result.
+            压缩后的文本结果。
         """
         return self._sanitize_reply_text(
             await self.router.text_chat(
@@ -3417,16 +3860,16 @@ class AgenticMemoryPlugin(Star):
         summary_type: str,
         max_chars: int,
     ) -> str:
-        """Merge one existing rolled-up summary with newly generated content.
+        """合并已有归纳摘要和新生成内容。
 
         Args:
-            existing_content: Existing summary text.
-            new_content: Newly generated summary text.
-            summary_type: Target layer name.
-            max_chars: Maximum output length.
+            existing_content: 旧摘要文本。
+            new_content: 新生成摘要文本。
+            summary_type: 目标层级名称。
+            max_chars: 最大输出长度。
 
         Returns:
-            Merged summary text.
+            合并后的摘要文本。
         """
         if not existing_content:
             return new_content
@@ -3454,18 +3897,18 @@ class AgenticMemoryPlugin(Star):
         max_chars: int,
         is_significant: bool = False,
     ) -> None:
-        """Insert or merge one rolled-up summary for the target layer.
+        """向目标层写入归纳摘要，必要时先合并旧内容。
 
         Args:
-            group_id: Group identifier.
-            summary_type: Target summary layer.
-            memory_key: Logical bucket key.
-            content: Generated summary text.
-            period_start: Covered period start.
-            period_end: Covered period end.
-            source_count: Number of source rows.
-            max_chars: Maximum merged length.
-            is_significant: Whether the summary is significant.
+            group_id: 群号。
+            summary_type: 目标摘要层级。
+            memory_key: 逻辑桶 key。
+            content: 生成的摘要文本。
+            period_start: 覆盖区间开始时间。
+            period_end: 覆盖区间结束时间。
+            source_count: 源记录数量。
+            max_chars: 合并后的最大长度。
+            is_significant: 是否为重要摘要。
         """
         existing_row = self.db.get_summary_by_memory_key(
             group_id, summary_type, memory_key
@@ -3507,11 +3950,11 @@ class AgenticMemoryPlugin(Star):
         )
 
     async def _rollup_paragraph_to_daily(self, group_id: str, now: datetime) -> None:
-        """Roll up paragraph memory into daily memory with delayed cleanup.
+        """把段落记忆归纳成日记忆，并设置延迟清理。
 
         Args:
-            group_id: Group identifier.
-            now: Current scheduler time.
+            group_id: 群号。
+            now: 当前调度时间。
         """
         cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = self.db.get_rollup_candidates(
@@ -3596,11 +4039,11 @@ class AgenticMemoryPlugin(Star):
             )
 
     async def _rollup_daily_to_month(self, group_id: str, now: datetime) -> None:
-        """Roll up daily memory into monthly memory with delayed cleanup.
+        """把日记忆归纳成月记忆，并设置延迟清理。
 
         Args:
-            group_id: Group identifier.
-            now: Current scheduler time.
+            group_id: 群号。
+            now: 当前调度时间。
         """
         current_month_start = now.replace(
             day=1,
@@ -3670,11 +4113,11 @@ class AgenticMemoryPlugin(Star):
             )
 
     async def _rollup_month_to_year(self, group_id: str, now: datetime) -> None:
-        """Roll up monthly memory into yearly memory with delayed cleanup.
+        """把月记忆归纳成年记忆，并设置延迟清理。
 
         Args:
-            group_id: Group identifier.
-            now: Current scheduler time.
+            group_id: 群号。
+            now: 当前调度时间。
         """
         current_year_start = datetime(
             now.year,
@@ -3747,11 +4190,11 @@ class AgenticMemoryPlugin(Star):
             )
 
     async def _rollup_year_to_history(self, group_id: str, now: datetime) -> None:
-        """Roll up older yearly memory into long-term history with delayed cleanup.
+        """把更老的年记忆归纳为历史记忆。
 
         Args:
-            group_id: Group identifier.
-            now: Current scheduler time.
+            group_id: 群号。
+            now: 当前调度时间。
         """
         history_year = now.year - self.year_retention_years
         history_cutoff = datetime(
@@ -3821,11 +4264,11 @@ class AgenticMemoryPlugin(Star):
         )
 
     async def _cleanup_rolled_up_memory(self, group_id: str, now: datetime) -> None:
-        """Delete source rows whose delayed cleanup time has arrived.
+        """清理已经到期的旧层记忆源数据。
 
         Args:
-            group_id: Group identifier.
-            now: Current scheduler time.
+            group_id: 群号。
+            now: 当前调度时间。
         """
         now_text = now.strftime("%Y-%m-%d %H:%M:%S")
         for summary_type in ("paragraph", "daily", "month", "year"):
@@ -3839,7 +4282,7 @@ class AgenticMemoryPlugin(Star):
                 )
 
     def _diagnose_memory(self) -> None:
-        """Log a structured diagnostic view of all memory layers and user profiles."""
+        """输出各层记忆和用户画像的诊断信息。"""
         active_groups = self.db.list_group_ids_with_summaries()
         if not active_groups:
             self._log(
@@ -3873,7 +4316,7 @@ class AgenticMemoryPlugin(Star):
                 )
 
     async def _cron_daily_compression(self) -> None:
-        """Run scheduled five-layer memory compression in the background."""
+        """后台按天执行五层记忆压缩与清理。"""
         while True:
             now = datetime.now()
             next_run = now.replace(

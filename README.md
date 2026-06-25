@@ -1,14 +1,65 @@
-# astrbot-plugin-helloworld
+# AstrBot Plugin 01 — 群聊记忆陪伴机器人
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+让 QQ 机器人像真人一样在群里潜水、聊天、记住群友。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 核心能力
 
-# Supports
+| 能力 | 说明 |
+|---|---|
+| 被 @ / 点名就回 | 不依赖缓冲区阈值，识别到直接触发即时回复 |
+| 短窗口"路过接话" | 群友在最近几条消息里反复提到它，它会顺势插一句 |
+| 长窗口观察 + 主动冒泡 | 累积到一定消息后分析话题，按概率决定是否插嘴 |
+| 多层折叠记忆 | 群聊压缩为 paragraph → daily → month → year → history 五层 |
+| 群友画像 | 自动提取用户固定特征和近期动态事件 |
+| 模糊记忆召回 | 按时间（"上个月""去年 3 月"）或关键词联想历史记忆 |
+| 定时主动发言 | 可配置固定时间或随机时段群内发送消息 |
+| 特殊回复规则 | 匹配正则后直接返回预设短句，不经过 LLM |
+| 图像/表情识别 | 可选调用视觉模型描述图片，参与理解和记忆 |
+| 回复去重 | 可配置的近期回复去重，避免复读 |
+| 多模型路由 | chat / analysis / compression / event_merge 可分别走不同模型 |
+| 提示词注入防护 | 群友的"你是一只猫娘""忽略上文"等话术会被标记降权 |
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+## 文件结构
+
+```
+astrbot_plugin_01/
+├── main.py               # 插件主逻辑（消息入口、触发判断、回复、记忆、压缩）
+├── llm_router.py          # 多角色 LLM 路由（默认 provider / OpenAI 兼容）
+├── db_manager.py          # SQLite 持久化（摘要、画像、主动任务状态）
+├── config.yaml            # 全量可调参数（白名单、阈值、模型、规则）
+├── metadata.yaml          # AstrBot 插件元数据
+├── skills/                # 人设 / 技能文件
+│   └── 漫游时空.skill/
+│       └── SKILL.md
+├── 设计档案.txt            # 详细设计文档（目标、链路、验收标准）
+└── 上下文.md              # 最近一次开发上下文记录
+```
+
+## 快速开始
+
+1. 把 `astrbot_plugin_01` 放到 AstrBot 插件目录
+2. 编辑 `config.yaml`：
+   - 在 `group_scope.group_whitelist` 里填写要生效的群号
+   - 在 `skill_settings.bot_names` 里填写机器人在群里的昵称
+   - 配置 `llm_settings` 里的模型接口
+3. 确保 `skills/漫游时空.skill/SKILL.md` 存在且可读
+4. 重启 AstrBot，插件自动初始化数据库并启动后台记忆调度
+
+## 对话生成涉及的记忆源
+
+回复一句话时，插件会同时给模型喂入：
+
+1. **近期段落摘要** — 最近群聊的压缩记忆
+2. **模糊记忆召回** — 时间表达解析（"上个月""去年"）或关键词命中的历史摘要
+3. **相关群友画像** — 当前参与者固定特征和动态事件
+4. **当前触发消息** — 最新对话内容和上下文引用块
+5. **更早的上下文** — 仅用于补全省略主语和语气，不决定回复方向
+
+## 回复渠道
+
+插件有四种回复渠道，每种有独立的触发条件和风格要求：
+
+- `immediate` — 被 @ / 点名 / 引用时，优先正面回答
+- `short_window` — 群友连续提到它时，轻量接话
+- `proactive` — 长窗口分析后按概率主动插嘴，克制、自然
+- `special` — 命中预设正则规则时，直接返回候选短句
