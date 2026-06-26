@@ -638,7 +638,7 @@ llm_settings:
       temperature: 0.1
       top_p: 0.9
       max_tokens: 768
-      timeout_seconds: 3600
+      timeout_seconds: 180
       extra_headers: {}
 
     # 角色：news_writer
@@ -652,7 +652,7 @@ llm_settings:
       temperature: 0.85
       top_p: 0.9
       max_tokens: 256
-      timeout_seconds: 30
+      timeout_seconds: 180
       extra_headers: {}
 
     # 角色：event_merge
