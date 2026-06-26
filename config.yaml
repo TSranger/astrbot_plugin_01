@@ -96,7 +96,7 @@ message_reaction_settings:
   immediate_summary_count: 5
 
   # 即时回复冷却时间（秒）。
-  immediate_cooldown_seconds: 5
+  immediate_cooldown_seconds: 10
 
   # 主动插话冷却时间（秒）。
   # 排查时设为 0，避免后台主动回复被冷却拦掉。
