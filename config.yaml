@@ -651,7 +651,7 @@ llm_settings:
       model: "deepseek-v4-flash"
       temperature: 0.85
       top_p: 0.9
-      max_tokens: 256
+      max_tokens: 512
       timeout_seconds: 180
       extra_headers: {}
 
@@ -665,7 +665,7 @@ llm_settings:
       model: "mimo-v2.5"    # 或“deepseek-v4-pro”
       temperature: 0.2
       top_p: 0.9
-      max_tokens: 128
+      max_tokens: 256
       timeout_seconds: 60
       extra_headers: {}
 
@@ -679,7 +679,7 @@ llm_settings:
       model: "mimo-v2-omni"  # MiMo-V2-Omni
       temperature: 0.2
       top_p: 0.9
-      max_tokens: 128
+      max_tokens: 256
       timeout_seconds: 60
       extra_headers: {}
 
