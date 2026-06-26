@@ -2477,11 +2477,6 @@ class AgenticMemoryPlugin(Star):
             else:
                 wait_seconds = max(3600, int((next_run - now).total_seconds()))
 
-            self._log(
-                "debug",
-                f"[news_selfie] Next run at {next_run.isoformat(timespec='seconds') if next_run else 'unknown'}, "
-                f"sleeping {wait_seconds / 60:.1f} min.",
-            )
             await asyncio.sleep(wait_seconds)
 
             now = datetime.now()
@@ -4303,10 +4298,6 @@ class AgenticMemoryPlugin(Star):
                 next_run += timedelta(days=1)
 
             wait_seconds = max(1, int((next_run - now).total_seconds()))
-            self._log(
-                "debug",
-                f"Memory compression is sleeping for {wait_seconds / 3600:.2f} hours.",
-            )
             await asyncio.sleep(wait_seconds)
 
             run_time = datetime.now().replace(second=0, microsecond=0)
