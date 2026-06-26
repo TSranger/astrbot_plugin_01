@@ -586,7 +586,7 @@ llm_settings:
       top_p: 0.9
 
       # 最大输出 token。
-      max_tokens: 192
+      max_tokens: 384
 
       # 请求超时秒数。
       timeout_seconds: 60
