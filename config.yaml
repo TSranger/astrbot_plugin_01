@@ -24,13 +24,6 @@
 #   - "whitelist_only" = 仅对白名单群生效
 #   - "all_groups"     = 对插件实际生效的所有群都可触发
 
-############################
-# 当前设计缺陷：
-# 1）内心想法（括号里的内容，比如“看看不说话”之类的）就不需要发出来了
-# 2）被提及或@后不会立刻回复，而是等新的一轮滑动窗口到位率才可能会回复（包括被引用消息）
-# 3）目前没有识别图片和表情包的功能。但还是把这俩算作了消息（我觉得算作消息没问题。但是得把图片和表情包的识别也做了）
-############################
-
 plugin_settings:
   # 是否启用整个插件。
   # 可选值：true / false
@@ -96,11 +89,18 @@ message_reaction_settings:
   immediate_summary_count: 5
 
   # 即时回复冷却时间（秒）。
+  # 仅对名字命中 / 引用 / followup 生效；@ 不受此冷却限制。
   immediate_cooldown_seconds: 10
+
+  # @ 专属冷却时间（秒）。0 表示 @ 时立即回复不受冷却限制。
+  immediate_mention_cooldown_seconds: 0
+
+  # followup（有人接 bot 话）专用冷却时间（秒）。
+  followup_cooldown_seconds: 10
 
   # 主动插话冷却时间（秒）。
   # 排查时设为 0，避免后台主动回复被冷却拦掉。
-  proactive_cooldown_seconds: 5
+  proactive_cooldown_seconds: 10
 
   # 是否启用“短窗口反应”。
   # 含义：最近若干条消息里频繁提到机器人，就算没人直接 @，也可以顺势说一句。
@@ -693,3 +693,20 @@ image_settings:
 
   # 单条消息最多识别几张图片。
   max_images_per_message: 3
+
+repeat_silence:
+  # 是否启用复读检测与压制
+  enabled: true
+
+  # 连续几条相同消息判定为复读
+  min_count: 3
+
+  # 复读消息比对时忽略前后空白差异
+  strip_compare: true
+
+image_flood_silence:
+  # 是否启用图片刷屏静默
+  enabled: true
+
+  # 连续几条纯图片消息进入静默
+  threshold: 5

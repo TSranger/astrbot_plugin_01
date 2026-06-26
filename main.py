@@ -85,6 +85,9 @@ class AgenticMemoryPlugin(Star):
         }
     )
 
+    _SILENCE_REPEAT = "repeat"
+    _SILENCE_IMAGE_FLOOD = "image_flood"
+
     def __init__(self, context: Context):
         """初始化插件状态、配置、数据库和后台任务。
 
@@ -147,6 +150,14 @@ class AgenticMemoryPlugin(Star):
         self.immediate_cooldown_seconds = max(
             0,
             int(self.reaction_settings.get("immediate_cooldown_seconds", 15)),
+        )
+        self.immediate_mention_cooldown_seconds = max(
+            0,
+            int(self.reaction_settings.get("immediate_mention_cooldown_seconds", 0)),
+        )
+        self.followup_cooldown_seconds = max(
+            0,
+            int(self.reaction_settings.get("followup_cooldown_seconds", 30)),
         )
         self.proactive_cooldown_seconds = max(
             0,
@@ -302,6 +313,25 @@ class AgenticMemoryPlugin(Star):
         )
         self.plugin_file_logger = self._setup_plugin_file_logger()
 
+        self.repeat_silence_settings = self.config.get("repeat_silence", {})
+        self.repeat_silence_enabled = bool(
+            self.repeat_silence_settings.get("enabled", True)
+        )
+        self.repeat_min_count = max(
+            3,
+            int(self.repeat_silence_settings.get("min_count", 3)),
+        )
+        self.repeat_strip_compare = bool(
+            self.repeat_silence_settings.get("strip_compare", True),
+        )
+
+        self.image_flood_settings = self.config.get("image_flood_silence", {})
+        self.image_flood_enabled = bool(self.image_flood_settings.get("enabled", True))
+        self.image_flood_threshold = max(
+            3,
+            int(self.image_flood_settings.get("threshold", 5)),
+        )
+
         # 读取人设 / 技能文本，并初始化 LLM 路由与记忆数据库。
         self.skill_content = self._load_skill(
             self.skill_settings.get("active_skill_file", ""),
@@ -336,6 +366,13 @@ class AgenticMemoryPlugin(Star):
 
         # 跟进回复检测：Bot 最后回复的目标发送者、时间和回复文本。
         self.last_bot_reply_context: dict[str, tuple[datetime, str, str]] = {}
+
+        # 复读检测：记录每个群最近的消息文本和连续相同次数
+        self.repeat_tracker: dict[str, dict[str, Any]] = {}
+        # 复读静默 + 图片刷屏静默集合
+        self.output_silenced_groups: dict[str, set[str]] = defaultdict(set)
+        # 图片连续计数器
+        self.image_only_consecutive: dict[str, int] = defaultdict(int)
 
         self._log(
             "info",
@@ -816,6 +853,12 @@ class AgenticMemoryPlugin(Star):
             return False
         _last_time, last_target_sender, bot_last_reply = entry
         if sender_name != last_target_sender:
+            self._log(
+                "info",
+                "[agentic_memory] Followup stage-1 mismatch. "
+                f"group={group_id}, sender={sender_name}, last_target={last_target_sender}, "
+                f"text={message_text[:120]}",
+            )
             return False
 
         truncated_reply = bot_last_reply[:200] if bot_last_reply else ""
@@ -837,7 +880,14 @@ class AgenticMemoryPlugin(Star):
         except Exception:
             return False
 
-        return str(result).strip().lower().startswith("yes")
+        is_followup = str(result).strip().lower().startswith("yes")
+        self._log(
+            "info",
+            "[agentic_memory] Followup stage-2 LLM decision. "
+            f"group={group_id}, sender={sender_name}, llm_raw={str(result)[:120]!r}, "
+            f"is_followup={is_followup}, text={message_text[:120]}",
+        )
+        return is_followup
 
     def _record_bot_reply_context(
         self, group_id: str, target_sender: str, reply_text: str
@@ -1203,6 +1253,7 @@ class AgenticMemoryPlugin(Star):
         sender_name: str,
         message_text: str,
         trigger_state: dict[str, Any],
+        user_id: str = "",
     ) -> None:
         """把消息同时写入长窗口和短窗口。
 
@@ -1211,9 +1262,11 @@ class AgenticMemoryPlugin(Star):
             sender_name: 发送者昵称。
             message_text: 纯文本消息。
             trigger_state: 预先计算好的触发状态。
+            user_id: 发送者 QQ 号。
         """
         message_item = {
             "sender": sender_name,
+            "user_id": user_id,
             "msg": message_text,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "is_mentioned": trigger_state["is_mentioned"],
@@ -1222,6 +1275,8 @@ class AgenticMemoryPlugin(Star):
         }
         self.message_buffers[group_id].append(message_item)
         self._get_short_window(group_id).append(message_item)
+        if user_id and sender_name:
+            self.db.record_nickname(group_id, user_id, sender_name)
 
     def _prune_short_window(self, group_id: str) -> None:
         """在短窗口判定前清理过期消息。
@@ -1719,9 +1774,16 @@ class AgenticMemoryPlugin(Star):
             cooldown_key: 发送后要标记的冷却键。
             use_group_direct_send: 是否直接向目标群发送。
 
-        Returns:
+            Returns:
             发送成功时返回 ``True``。
         """
+        if channel not in ("repeat",) and self.output_silenced_groups.get(group_id):
+            self._log(
+                "info",
+                f"[agentic_memory] Reply blocked by output silence. group={group_id}, channel={channel}",
+            )
+            return False
+
         raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
         if not reply_text:
@@ -2151,6 +2213,13 @@ class AgenticMemoryPlugin(Star):
         Returns:
             状态字符串：``sent``、``skipped``、``retryable_failure`` 或 ``fatal_failure``。
         """
+        if self.output_silenced_groups.get(group_id):
+            self._log(
+                "info",
+                f"[agentic_memory] Proactive talk blocked by output silence. group={group_id}, task_id={task_id}",
+            )
+            return "skipped"
+
         raw_reply_text = str(reply_text)
         reply_text = self._sanitize_reply_text(reply_text)
         if not reply_text:
@@ -2633,6 +2702,13 @@ class AgenticMemoryPlugin(Star):
                             self._log(
                                 "warning",
                                 f"[news_selfie] No cached session for group {group_id}, skip.",
+                            )
+                            continue
+
+                        if self.output_silenced_groups.get(group_id):
+                            self._log(
+                                "info",
+                                f"[agentic_memory] News selfie blocked by output silence. group={group_id}",
                             )
                             continue
 
@@ -3153,17 +3229,25 @@ class AgenticMemoryPlugin(Star):
             focus_context,
         )
 
-        involved_users = []
+        involved_items: list[tuple[str, str, str]] = []
         seen_users = set()
         for item in focus_context:
             sender = str(item.get("sender", "")).strip()
+            uid = str(item.get("user_id", "")).strip()
             if sender and sender not in seen_users:
                 seen_users.add(sender)
-                involved_users.append(sender)
+                involved_items.append((sender, uid, sender))
 
         archives_lines: list[str] = []
-        for user_name in involved_users:
-            user_data = self.db.get_user_profile(group_id, user_name)
+        for sender_name, uid, display_name in involved_items:
+            if uid:
+                user_data = self.db.get_user_profile_by_user_id(group_id, uid)
+                if not user_data.get("fixed_data") and not user_data.get(
+                    "dynamic_events"
+                ):
+                    user_data = self.db.get_user_profile(group_id, sender_name)
+            else:
+                user_data = self.db.get_user_profile(group_id, sender_name)
             fixed_info = ", ".join(
                 f"{key}:{value}"
                 for key, value in user_data.get("fixed_data", {}).items()
@@ -3171,7 +3255,7 @@ class AgenticMemoryPlugin(Star):
             dynamic_info = "; ".join(user_data.get("dynamic_events", []))
             if fixed_info or dynamic_info:
                 archives_lines.append(
-                    f"- {user_name} -> fixed=[{fixed_info}] dynamic=[{dynamic_info}]",
+                    f"- {display_name} -> fixed=[{fixed_info}] dynamic=[{dynamic_info}]",
                 )
         archives_str = (
             "【Related user memory】\n" + "\n".join(archives_lines)
@@ -3354,6 +3438,7 @@ class AgenticMemoryPlugin(Star):
             '    "summary": "一句话总结",\n'
             '    "is_significant": false,\n'
             '    "matches_preference": false,\n'
+            '    "knowledge_confidence": 0.8,\n'
             '    "profile_updates": {"用户": {"字段": "值"}},\n'
             '    "dynamic_events": {"用户": ["事件1", "事件2"]}\n'
             "  },\n"
@@ -3361,6 +3446,12 @@ class AgenticMemoryPlugin(Star):
             "}\n"
             "When possible, prefer a short concrete interject_topic copied or paraphrased from the latest still-relevant chat line.\n"
             "Leave interject_topic empty only when the whole batch truly has no safe natural opening for the bot to join.\n"
+            "knowledge_confidence is a float 0.0-1.0 that reflects how well you can meaningfully "
+            "contribute to this topic given the skill excerpt and your general knowledge.\n"
+            "Score 0.8-1.0 if the topic is common knowledge or directly relates to the skill.\n"
+            "Score 0.4-0.7 if the topic is somewhat recognizable but you lack depth.\n"
+            "Score 0.0-0.3 if the topic involves unreleased content, unknown proper nouns, "
+            "or anything you cannot map to known concepts.\n"
             f"Skill excerpt:\n{self.skill_content[:analysis_skill_excerpt_chars]}"
         )
         prompt = f"Group ID: {group_id}\nMessage count: {len(chat_batch)}\n{chat_text}"
@@ -3455,6 +3546,8 @@ class AgenticMemoryPlugin(Star):
             summary_text = str(analysis.get("summary", "")).strip()
             is_significant = bool(analysis.get("is_significant", False))
             matches_preference = bool(analysis.get("matches_preference", False))
+            knowledge_confidence = float(analysis.get("knowledge_confidence", 0.5))
+            knowledge_confidence = max(0.0, min(1.0, knowledge_confidence))
             interject_topic = str(llm_result.get("interject_topic", "")).strip()
             used_fallback_topic = False
 
@@ -3503,10 +3596,21 @@ class AgenticMemoryPlugin(Star):
                 )
 
             profile_updates = analysis.get("profile_updates", {})
+            nickname_to_user_id: dict[str, str] = {}
+            for item in chat_batch:
+                uid = str(item.get("user_id", "")).strip()
+                snd = str(item.get("sender", "")).strip()
+                if uid and snd:
+                    nickname_to_user_id[snd] = uid
+
             if isinstance(profile_updates, dict):
                 for user_name, updates in profile_updates.items():
                     if not isinstance(updates, dict) or not updates:
                         continue
+                    resolved_uid = nickname_to_user_id.get(
+                        str(user_name),
+                        str(user_name),
+                    )
                     user_data = self.db.get_user_profile(group_id, str(user_name))
                     fixed_data = user_data["fixed_data"].copy()
                     fixed_data.update(updates)
@@ -3515,6 +3619,7 @@ class AgenticMemoryPlugin(Star):
                         str(user_name),
                         fixed_data,
                         user_data["dynamic_events"],
+                        user_id=resolved_uid,
                     )
 
             dynamic_events = analysis.get("dynamic_events", {})
@@ -3531,6 +3636,10 @@ class AgenticMemoryPlugin(Star):
                     if not event_list:
                         continue
 
+                    resolved_uid = nickname_to_user_id.get(
+                        str(user_name),
+                        str(user_name),
+                    )
                     user_data = self.db.get_user_profile(group_id, str(user_name))
                     fixed_data = user_data["fixed_data"]
                     merged_events = list(user_data["dynamic_events"])
@@ -3552,6 +3661,7 @@ class AgenticMemoryPlugin(Star):
                         str(user_name),
                         fixed_data,
                         merged_events,
+                        user_id=resolved_uid,
                     )
 
             if not self._is_cooldown_ready(
@@ -3577,6 +3687,7 @@ class AgenticMemoryPlugin(Star):
                     if matches_preference
                     else self.base_interject_probability
                 )
+                probability *= knowledge_confidence
                 random_draw = random.random()
                 should_speak = random_draw < probability
 
@@ -3584,7 +3695,7 @@ class AgenticMemoryPlugin(Star):
                 "info",
                 "[agentic_memory] Proactive decision. "
                 f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
-                f"matches_preference={matches_preference}, probability={probability:.4f}, "
+                f"matches_preference={matches_preference}, knowledge_confidence={knowledge_confidence:.2f}, probability={probability:.4f}, "
                 f"random_draw={(f'{random_draw:.4f}' if random_draw is not None else 'significant_auto_pass')}, "
                 f"topic_ready={bool(interject_topic)}, should_speak={should_speak}",
             )
@@ -3650,13 +3761,17 @@ class AgenticMemoryPlugin(Star):
         try:
             for segment in event.get_messages():
                 segment_type = str(getattr(segment, "type", "")).strip().lower()
+                self._log(
+                    "info",
+                    f"[agentic_memory][media] segment type={segment_type!r}, repr={repr(segment)[:200]}",
+                )
 
                 if segment_type == "image":
                     url = self._extract_image_url_from_segment(segment)
                     if url:
                         image_urls.append(str(url).strip())
 
-                elif segment_type in ("face", "mface"):
+                elif segment_type == "face":
                     face_id = getattr(segment, "id", None)
                     face_text = ""
                     if face_id is not None:
@@ -3670,6 +3785,25 @@ class AgenticMemoryPlugin(Star):
                             face_text = f"[表情:{data.get('id', '?')}]"
                     if face_text:
                         face_descriptions.append(face_text)
+
+                elif segment_type == "mface":
+                    data = getattr(segment, "data", None)
+                    if isinstance(data, dict):
+                        summary = str(data.get("summary", "")).strip()
+                        if summary:
+                            face_descriptions.append(f"[表情:{summary}]")
+                        else:
+                            mface_url = str(data.get("url", "") or "").strip()
+                            if mface_url:
+                                image_urls.append(mface_url)
+                            else:
+                                mface_id = getattr(segment, "id", None)
+                                if mface_id is not None:
+                                    face_descriptions.append(f"[表情:{mface_id}]")
+                    else:
+                        mface_id = getattr(segment, "id", None)
+                        if mface_id is not None:
+                            face_descriptions.append(f"[表情:{mface_id}]")
         except Exception as exc:
             self._log("debug", f"Failed to extract media from event: {exc}")
 
@@ -3707,6 +3841,12 @@ class AgenticMemoryPlugin(Star):
             file_path = str(data.get("file", "") or "").strip()
             if file_path:
                 return file_path
+
+        raw = getattr(segment, "raw", None)
+        if raw and isinstance(raw, str):
+            match = re.search(r"\[CQ:image,[^\]]*url=([^,\]]+)", raw)
+            if match:
+                return match.group(1).strip()
 
         to_dict = getattr(segment, "toDict", None)
         if callable(to_dict):
@@ -3931,11 +4071,22 @@ class AgenticMemoryPlugin(Star):
         image_urls = media_info["image_urls"]
         face_descriptions = media_info["face_descriptions"]
 
+        if not image_urls:
+            raw_msg = str(
+                getattr(getattr(event, "message_obj", None), "raw_message", "")
+            ).strip()
+            url_matches = re.findall(r"\[CQ:image,[^\]]*url=([^,\]]+)", raw_msg)
+            if url_matches:
+                image_urls = [url.strip() for url in url_matches if url.strip()]
+
         if not message_text and not (image_urls or face_descriptions):
             raw_text = str(
                 getattr(getattr(event, "message_obj", None), "raw_message", "")
             ).strip()
             message_text = raw_text
+
+        if message_text.startswith("<Event,") and (image_urls or face_descriptions):
+            message_text = ""
 
         if image_urls:
             image_settings = self.config.get("image_settings", {})
@@ -3981,18 +4132,109 @@ class AgenticMemoryPlugin(Star):
             return
 
         sender_name = str(event.get_sender_name()).strip() or "Unknown"
+        user_id = str(
+            getattr(getattr(event, "message_obj", None), "user_id", "")
+        ).strip()
         self._log_raw_event_debug(event, group_id, message_text)
         trigger_state = self._build_trigger_state(event, message_text)
         self._log(
             "info",
             "[agentic_memory] Received group message. "
-            f"group={group_id}, sender={sender_name}, mentioned={trigger_state['is_mentioned']}, "
+            f"group={group_id}, sender={sender_name}, user_id={user_id}, mentioned={trigger_state['is_mentioned']}, "
             f"quoted={trigger_state['is_quoted']}, name_hit={trigger_state['name_hit']}, "
             f"question_hit={trigger_state['question_pattern_hit']}, "
             f"text={message_text[:120]}",
         )
 
-        self._append_message(group_id, sender_name, message_text, trigger_state)
+        is_pure_image = bool(image_urls) and not message_text.strip()
+
+        # ── 复读检测 ──
+        if self.repeat_silence_enabled:
+            current_text = (
+                message_text.strip() if self.repeat_strip_compare else message_text
+            )
+            tracker = self.repeat_tracker.get(group_id)
+
+            if tracker and tracker.get("silenced"):
+                if current_text == tracker["last_text"]:
+                    return
+                else:
+                    self.repeat_tracker.pop(group_id, None)
+                    self.output_silenced_groups[group_id].discard(self._SILENCE_REPEAT)
+
+            elif not is_pure_image and current_text:
+                if tracker and current_text == tracker["last_text"]:
+                    tracker["count"] += 1
+                else:
+                    self.repeat_tracker[group_id] = {
+                        "last_text": current_text,
+                        "count": 1,
+                        "silenced": False,
+                    }
+                    tracker = self.repeat_tracker[group_id]
+
+                if (
+                    tracker
+                    and tracker["count"] >= self.repeat_min_count
+                    and not tracker["silenced"]
+                ):
+                    self._log(
+                        "info",
+                        f"[agentic_memory] Repeat detected. group={group_id}, text={current_text[:80]}, count={tracker['count']}",
+                    )
+                    repeat_text = current_text if current_text else tracker["last_text"]
+                    await self._send_reply(
+                        event,
+                        group_id,
+                        repeat_text,
+                        channel="repeat",
+                    )
+                    tracker["silenced"] = True
+                    self.output_silenced_groups[group_id].add(self._SILENCE_REPEAT)
+                    self._log(
+                        "info",
+                        f"[agentic_memory] Repeat silence activated. group={group_id}",
+                    )
+                    return
+            else:
+                self.repeat_tracker.pop(group_id, None)
+
+        # ── 图片刷屏检测 ──
+        if self.image_flood_enabled:
+            if is_pure_image:
+                self.image_only_consecutive[group_id] += 1
+                if self.image_only_consecutive[group_id] >= self.image_flood_threshold:
+                    self.output_silenced_groups[group_id].add(self._SILENCE_IMAGE_FLOOD)
+                    self._log(
+                        "info",
+                        f"[agentic_memory] Image flood silence activated. group={group_id}, consecutive={self.image_only_consecutive[group_id]}",
+                    )
+            elif message_text.strip():
+                if (
+                    self.image_only_consecutive.get(group_id, 0)
+                    >= self.image_flood_threshold
+                ):
+                    self._log(
+                        "info",
+                        f"[agentic_memory] Image flood silence broken by text. group={group_id}",
+                    )
+                self.image_only_consecutive[group_id] = 0
+                self.output_silenced_groups[group_id].discard(self._SILENCE_IMAGE_FLOOD)
+
+        # ── 全局静默检查 ──
+        if self.output_silenced_groups.get(group_id):
+            return
+
+        buffer = self.message_buffers[group_id]
+        is_duplicate_buffer = (
+            buffer
+            and buffer[-1].get("msg", "").strip() == message_text.strip()
+            and buffer[-1].get("sender", "") == sender_name
+        )
+        if not is_duplicate_buffer:
+            self._append_message(
+                group_id, sender_name, message_text, trigger_state, user_id=user_id
+            )
         long_window_batch = self._pop_long_window_batch(group_id)
         if long_window_batch:
             asyncio.create_task(self._process_memory_task(group_id, long_window_batch))
@@ -4012,52 +4254,144 @@ class AgenticMemoryPlugin(Star):
         is_followup = await self._is_sender_followup_to_bot(
             group_id, sender_name, message_text
         )
-        should_reply_immediately = (
-            trigger_state["is_mentioned"]
-            or trigger_state["is_quoted"]
+        if is_followup:
+            self._log(
+                "info",
+                "[agentic_memory] Followup detected. "
+                f"group={group_id}, sender={sender_name}, "
+                f"text={message_text[:120]}",
+            )
+
+        if trigger_state["is_mentioned"]:
+            if self._is_cooldown_ready(
+                group_id,
+                "immediate:mention",
+                self.immediate_mention_cooldown_seconds,
+            ):
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate mention reply triggered in group {group_id}.",
+                )
+                recent_context = self.message_buffers[group_id][
+                    -self.immediate_context_messages :
+                ]
+                reply_text = await self._build_chat_reply(
+                    group_id,
+                    message_text,
+                    recent_context,
+                    channel="immediate",
+                )
+                sent = await self._send_reply(
+                    event,
+                    group_id,
+                    reply_text,
+                    channel="immediate",
+                    cooldown_key="immediate:mention",
+                )
+                if sent:
+                    self._record_bot_reply_context(group_id, sender_name, reply_text)
+                    self._mark_cooldown(group_id, "short_window")
+                    self._stop_event_flow(event)
+                    return
+                else:
+                    self._log(
+                        "info",
+                        "[agentic_memory] Immediate mention trigger finished without sending. "
+                        f"group={group_id}. Check preceding logs for sanitize/dedup/send details.",
+                    )
+            else:
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate mention reply blocked by cooldown. group={group_id}",
+                )
+        elif (
+            trigger_state["is_quoted"]
             or trigger_state["name_hit"]
             or trigger_state["question_pattern_hit"]
-            or is_followup
-        )
-        if should_reply_immediately and self._is_cooldown_ready(
-            group_id,
-            "immediate",
-            self.immediate_cooldown_seconds,
         ):
-            self._log(
-                "info",
-                f"[agentic_memory] Immediate reply triggered in group {group_id}.",
-            )
-            recent_context = self.message_buffers[group_id][
-                -self.immediate_context_messages :
-            ]
-            reply_text = await self._build_chat_reply(
+            if self._is_cooldown_ready(
                 group_id,
-                message_text,
-                recent_context,
-                channel="immediate",
-            )
-            sent = await self._send_reply(
-                event,
+                "immediate",
+                self.immediate_cooldown_seconds,
+            ):
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate name/quote/question reply triggered in group {group_id}.",
+                )
+                recent_context = self.message_buffers[group_id][
+                    -self.immediate_context_messages :
+                ]
+                reply_text = await self._build_chat_reply(
+                    group_id,
+                    message_text,
+                    recent_context,
+                    channel="immediate",
+                )
+                sent = await self._send_reply(
+                    event,
+                    group_id,
+                    reply_text,
+                    channel="immediate",
+                    cooldown_key="immediate",
+                )
+                if sent:
+                    self._record_bot_reply_context(group_id, sender_name, reply_text)
+                    self._mark_cooldown(group_id, "short_window")
+                    self._stop_event_flow(event)
+                    return
+                else:
+                    self._log(
+                        "info",
+                        "[agentic_memory] Immediate name/quote/question trigger finished without sending. "
+                        f"group={group_id}. Check preceding logs for sanitize/dedup/send details.",
+                    )
+            else:
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate name/quote/question reply blocked by cooldown. group={group_id}",
+                )
+        elif is_followup:
+            if self._is_cooldown_ready(
                 group_id,
-                reply_text,
-                channel="immediate",
-                cooldown_key="immediate",
-            )
-            if sent:
-                self._record_bot_reply_context(group_id, sender_name, reply_text)
-                self._stop_event_flow(event)
-                return
-            self._log(
-                "info",
-                "[agentic_memory] Immediate reply trigger finished without sending. "
-                f"group={group_id}. Check preceding logs for sanitize/dedup/send details.",
-            )
-        elif should_reply_immediately:
-            self._log(
-                "info",
-                f"[agentic_memory] Immediate reply was blocked by cooldown. group={group_id}",
-            )
+                "immediate:followup",
+                self.followup_cooldown_seconds,
+            ):
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate followup reply triggered in group {group_id}.",
+                )
+                recent_context = self.message_buffers[group_id][
+                    -self.immediate_context_messages :
+                ]
+                reply_text = await self._build_chat_reply(
+                    group_id,
+                    message_text,
+                    recent_context,
+                    channel="immediate",
+                )
+                sent = await self._send_reply(
+                    event,
+                    group_id,
+                    reply_text,
+                    channel="immediate",
+                    cooldown_key="immediate:followup",
+                )
+                if sent:
+                    self._record_bot_reply_context(group_id, sender_name, reply_text)
+                    self._mark_cooldown(group_id, "short_window")
+                    self._stop_event_flow(event)
+                    return
+                else:
+                    self._log(
+                        "info",
+                        "[agentic_memory] Immediate followup trigger finished without sending. "
+                        f"group={group_id}. Check preceding logs for sanitize/dedup/send details.",
+                    )
+            else:
+                self._log(
+                    "info",
+                    f"[agentic_memory] Immediate followup reply blocked by cooldown. group={group_id}",
+                )
 
         if self._should_trigger_short_window(group_id) and self._is_cooldown_ready(
             group_id,
