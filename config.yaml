@@ -52,7 +52,7 @@ skill_settings:
   # - 插件目录下的相对路径
   # - 绝对路径
   # 这个文件通常决定机器人的角色口吻、背景设定、世界观。
-  active_skill_file: "skills/漫游时空.skill/SKILL.md"
+  active_skill_file: "skills/薇塔.skill/SKILL.md"
 
   # 机器人在群里可能被人提到的名字列表。
   # 只要消息里出现其中任意一个名字，就会被视作“被点名”。
@@ -63,8 +63,15 @@ skill_settings:
   bot_names:
     # - "小号"
     # - "漫舞时空"
-    - "漫游时空"
     # - "派蒙"
+    - "薇塔"
+    - "Vita"
+    - "VITA"
+    - "vita"
+    - "小薇"
+    - "小V"
+    - "小Vita"
+    - "小vita"
 
   # “直接唤醒问句”的正则表达式列表。
   # 用于识别：虽然没 @，但明显是在问机器人。
@@ -73,8 +80,8 @@ skill_settings:
   # - 带 (?i) 表示忽略大小写
   # - 可自行加入更多口语问法
   direct_wake_question_patterns:
-    - "(?i).*(派蒙|漫游时空).*(吗|呢|怎么|为什么|咋|啥|什么|会不会|是不是).*"
-    - "(?i).*(问|问下|想问).*(派蒙|漫游时空).*"
+    # - "(?i).*(派蒙|漫游时空).*(吗|呢|怎么|为什么|咋|啥|什么|会不会|是不是).*"
+    # - "(?i).*(问|问下|想问).*(派蒙|漫游时空).*"
 
 message_reaction_settings:
   # 被 @ / 被点名 / 被直接问话时，取最近多少条消息作为即时回复上下文。
@@ -343,7 +350,7 @@ special_replies:
     # 规则示例 1：别人问“怎么还不睡”
     - rule_id: "late_sleep"
       # 是否启用该条规则。
-      enabled: true
+      enabled: false
 
       # 优先级，越大越先匹配。
       priority: 100
@@ -362,7 +369,7 @@ special_replies:
       candidate_replies:
         - "失眠了。"
         - "睡不着。"
-        # - "还没困。"
+        - "还没困。"
 
       # 是否必须满足对应条件才允许触发。
       required_mention: false
@@ -379,7 +386,7 @@ special_replies:
 
     # 规则示例 2：别人问“周边买不买”
     - rule_id: "merch_buy"
-      enabled: true
+      enabled: false
       priority: 90
       trigger_mode: "direct_wake_only"
       patterns:
@@ -408,7 +415,7 @@ proactive_talk_settings:
   # 发送失败后的重试间隔（秒）。
   # 仅用于“可重试失败”（例如临时网络波动）；像“不在群里/已被移出群”
   # 这类明确失败会在当天停止重试，避免每 30 秒刷报错。
-  failure_retry_seconds: 1800
+  failure_retry_seconds: 18000
 
   # 默认投递群列表。
   # 如果某个 task 没单独写 group_ids，就使用这里的群号。
@@ -469,24 +476,24 @@ proactive_talk_settings:
     #     - "我就是熬夜冠军！"
     #     # - "一会儿吃啥？"
 
-    # 示例 3：给单独群的固定提醒
-    - task_id: "lunch_question"
-      enabled: true
-      time: "10:30"
-      cooldown_seconds: 0
-      group_ids:
-        - "157903619"
-      messages:
-        - "中午吃啥？"
+    # # 示例 3：给单独群的固定提醒
+    # - task_id: "lunch_question"
+    #   enabled: true
+    #   time: "10:30"
+    #   cooldown_seconds: 0
+    #   group_ids:
+    #     - "157903619"
+    #   messages:
+    #     - "中午吃啥？"
     
-    - task_id: "afternoon_tea"
-      enabled: true
-      time: "15:00"
-      cooldown_seconds: 0
-      group_ids:
-        - "157903619"
-      messages:
-        - "三点钟了，改饮茶了"
+    # - task_id: "afternoon_tea"
+    #   enabled: true
+    #   time: "15:00"
+    #   cooldown_seconds: 0
+    #   group_ids:
+    #     - "157903619"
+    #   messages:
+    #     - "三点钟了，改饮茶了"
 
 news_selfie_settings:
   # 是否启用新闻自拍功能。
@@ -713,7 +720,7 @@ llm_settings:
       provider_type: "openai_compatible"
       base_url: "https://token-plan-cn.xiaomimimo.com/v1"
       api_key: "tp-ce7yv25lqyo9k69dhe6dwv4ptoo8df2nq9qd2e0efvkvzaty"
-      model: "mimo-v2.5"
+      model: "mimo-v2-omni"  # MiMo-V2-Omni
       temperature: 0.2
       top_p: 0.9
       max_tokens: 128
