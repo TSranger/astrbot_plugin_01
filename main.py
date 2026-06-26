@@ -101,12 +101,14 @@ class AgenticMemoryPlugin(Star):
         self.logging_settings = self.config.get("logging_settings", {})
         self.bot_names = [
             str(name).strip()
-            for name in self.skill_settings.get("bot_names", [])
+            for name in (self.skill_settings.get("bot_names") or [])
             if str(name).strip()
         ]
         self.direct_wake_question_patterns = [
             str(pattern)
-            for pattern in self.skill_settings.get("direct_wake_question_patterns", [])
+            for pattern in (
+                self.skill_settings.get("direct_wake_question_patterns") or []
+            )
             if str(pattern).strip()
         ]
 
