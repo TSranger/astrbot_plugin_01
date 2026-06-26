@@ -388,12 +388,12 @@ class AgenticMemoryPlugin(Star):
 
         log_path = self._resolve_plugin_log_path()
         plugin_logger = logging.getLogger(f"astrbot_plugin_01.file.{id(self)}")
-        plugin_logger.setLevel(logging.INFO)
+        plugin_logger.setLevel(logging.DEBUG)
         plugin_logger.propagate = False
         plugin_logger.handlers.clear()
 
         handler = logging.FileHandler(log_path, encoding="utf-8")
-        handler.setLevel(logging.INFO)
+        handler.setLevel(logging.DEBUG)
         handler.setFormatter(
             logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
         )
@@ -2429,7 +2429,7 @@ class AgenticMemoryPlugin(Star):
         if not self.news_selfie_pipeline:
             return
 
-        self._log("info", "[agentic_memory] News selfie scheduler started.")
+        self._log("debug", "[agentic_memory] News selfie scheduler started.")
 
         _first_run_done = False
 
@@ -2497,7 +2497,7 @@ class AgenticMemoryPlugin(Star):
                     continue
 
                 self._log(
-                    "info",
+                    "debug",
                     f"[news_selfie] Triggering task {task_id} at {now.isoformat(timespec='seconds')}",
                 )
                 try:
@@ -2512,7 +2512,7 @@ class AgenticMemoryPlugin(Star):
 
                 if not results:
                     self._log(
-                        "info",
+                        "debug",
                         f"[news_selfie] No result for task {task_id}.",
                     )
                     continue
