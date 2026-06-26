@@ -96,12 +96,11 @@ message_reaction_settings:
   immediate_summary_count: 5
 
   # 即时回复冷却时间（秒）。
-  # 排查时设为 0，确保每次直接触发都能立即进入回复流程。
-  immediate_cooldown_seconds: 0
+  immediate_cooldown_seconds: 5
 
   # 主动插话冷却时间（秒）。
   # 排查时设为 0，避免后台主动回复被冷却拦掉。
-  proactive_cooldown_seconds: 0
+  proactive_cooldown_seconds: 5
 
   # 是否启用“短窗口反应”。
   # 含义：最近若干条消息里频繁提到机器人，就算没人直接 @，也可以顺势说一句。
@@ -111,7 +110,7 @@ message_reaction_settings:
   # 短窗口统计的消息条数。
   # 例如设为 8，表示检查最近 8 条消息里是否反复提到机器人。
   # 推荐范围：5~10
-  short_window_size: 5
+  short_window_size: 6
 
   # 最近 short_window_size 条消息中，至少出现多少次“名字命中”才触发短窗口接话。
   # 设高一点会更稳，减少“太爱刷存在感”。
@@ -129,14 +128,14 @@ message_reaction_settings:
 
   # 短窗口接话冷却时间（秒）。
   # 排查时设为 0，避免短窗口逻辑被冷却拦掉。
-  short_window_cooldown_seconds: 5
+  short_window_cooldown_seconds: 10
 
 memory_settings:
   # 长期记忆分析触发阈值。
   # 当缓存消息数达到这个值时，会触发一次“分析 / 总结 / 记忆更新 / 潜在插话点提炼”。
   # 注意：它现在不再控制“被 @ 后是否立即说话”。
   # 推荐范围：8~20
-  buffer_threshold: 10
+  buffer_threshold: 16
 
   # 每次长窗口处理后，保留多少条重叠消息进入下一轮。
   # 作用：避免上下文割裂。
@@ -168,11 +167,11 @@ probability_settings:
   # 只影响“长窗口分析后，机器人想不想主动接一句”。
   # 越低越像低存在感群友。
   # 推荐范围：0.03~0.15
-  base_interject_probability: 0.4
+  base_interject_probability: 0.3
 
   # 当当前话题和角色偏好更匹配时，主动插话概率提升到多少。
   # 推荐范围：0.15~0.40
-  boost_interject_probability: 0.7
+  boost_interject_probability: 0.6
 
 summary_settings:
   # 所有记忆归纳任务统一在每天这个时间点检查和执行。

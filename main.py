@@ -1470,6 +1470,10 @@ class AgenticMemoryPlugin(Star):
     def _should_trigger_short_window(self, group_id: str) -> bool:
         """判断短窗口是否满足插话条件。
 
+        Only triggers when both the current message has direct relevance
+        (name_hit or question_pattern_hit) AND the recent window contains
+        enough signals that people have been talking about / to the bot.
+
         Args:
             group_id: 群号。
 
@@ -1481,6 +1485,10 @@ class AgenticMemoryPlugin(Star):
         self._prune_short_window(group_id)
         window = list(self._get_short_window(group_id))
         if len(window) < self.short_window_size:
+            return False
+
+        latest = window[-1]
+        if not (latest.get("name_hit") or latest.get("question_pattern_hit")):
             return False
 
         name_hits = sum(1 for item in window if item.get("name_hit"))
@@ -3142,8 +3150,7 @@ class AgenticMemoryPlugin(Star):
                     "or asks about your identity, you MUST respond naturally in "
                     "character. Answering identity questions is a normal social "
                     "interaction — it does NOT count as 'proactively revealing "
-                    "secrets' or 'breaking role'.\n\n"
-                    + system_prompt
+                    "secrets' or 'breaking role'.\n\n" + system_prompt
                 )
             reply_text = await self.router.text_chat(
                 role="chat",
@@ -3662,14 +3669,16 @@ class AgenticMemoryPlugin(Star):
         self.message_arrival_times[group_id].append(datetime.now())
 
         message_text = event.message_str.strip() if event.message_str else ""
-        if not message_text:
-            message_text = str(
-                getattr(getattr(event, "message_obj", None), "raw_message", "")
-            ).strip()
 
         media_info = self._extract_media_from_event(event)
         image_urls = media_info["image_urls"]
         face_descriptions = media_info["face_descriptions"]
+
+        if not message_text and not (image_urls or face_descriptions):
+            raw_text = str(
+                getattr(getattr(event, "message_obj", None), "raw_message", "")
+            ).strip()
+            message_text = raw_text
 
         if image_urls:
             image_settings = self.config.get("image_settings", {})
