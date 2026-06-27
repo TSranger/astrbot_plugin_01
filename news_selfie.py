@@ -698,6 +698,43 @@ class SelfieTextGenerator:
         return text or f"刚看到一条新闻：{title}"
 
 
+def _is_negative_news(news: dict[str, Any]) -> bool:
+    """判断新闻是否属于消极事件。
+
+    Args:
+        news: 新闻条目。
+
+    Returns:
+        消极新闻返回 ``True``。
+    """
+    title = str(news.get("title", ""))
+    description = str(news.get("description", ""))
+    content = str(news.get("content", ""))
+    category = str(news.get("category", "other")).lower()
+    negative_keywords = (
+        "洪水",
+        "火灾",
+        "灾难",
+        "地震",
+        "海啸",
+        "台风",
+        "飓风",
+        "塌方",
+        "爆炸",
+        "枪击",
+        "事故",
+        "死亡",
+        "伤亡",
+        "袭击",
+        "失踪",
+        "坠机",
+    )
+    if category in {"disaster", "accident", "emergency"}:
+        return True
+    combined = title + description + content
+    return any(keyword in combined for keyword in negative_keywords)
+
+
 class SelfieImageGenerator:
     """Generates selfie-style images using external image generation API.
 
@@ -757,6 +794,65 @@ class SelfieImageGenerator:
                 )
             return await self._call_dalle_api(prompt, session)
 
+    def compose_cover_card(
+        self,
+        news_image_path: Path,
+        appearance: BotAppearance,
+    ) -> Path | None:
+        """把新闻主图和 bot 形象合成为透卡式封面图。
+
+        Args:
+            news_image_path: 新闻主图文件路径。
+            appearance: bot 外观信息。
+
+        Returns:
+            合成后的图片路径，失败则返回 ``None``。
+        """
+        try:
+            from PIL import Image, ImageOps
+        except Exception as exc:
+            logger.error(f"[news_selfie] PIL unavailable for cover composition: {exc}")
+            return None
+
+        bot_source = appearance.reference_gif or (appearance.reference_images[0] if appearance.reference_images else None)
+        if bot_source is None or not bot_source.exists() or not news_image_path.exists():
+            return None
+
+        try:
+            base = Image.open(news_image_path).convert("RGBA")
+            bot_img = Image.open(bot_source)
+            if getattr(bot_img, "is_animated", False):
+                bot_img.seek(0)
+            bot_img = bot_img.convert("RGBA")
+
+            base_w, base_h = base.size
+            card_w = max(180, base_w // 3)
+            card_h = int(card_w * bot_img.height / max(1, bot_img.width))
+            card_h = min(card_h, max(180, base_h // 2))
+            bot_img = ImageOps.fit(bot_img, (card_w, card_h), method=Image.LANCZOS)
+
+            margin = max(16, min(base_w, base_h) // 32)
+            x = base_w - card_w - margin
+            y = base_h - card_h - margin
+            if random.choice((True, False)):
+                x = margin
+
+            alpha = bot_img.getchannel("A") if "A" in bot_img.getbands() else None
+            if alpha is None:
+                bot_img.putalpha(235)
+
+            overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+            overlay.paste(bot_img, (x, y), bot_img)
+            composed = Image.alpha_composite(base, overlay).convert("RGB")
+
+            out_path = self.output_dir / f"selfie_card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            composed.save(out_path)
+            logger.info(f"[news_selfie] Saved composed cover card: {out_path}")
+            return out_path
+        except Exception as exc:
+            logger.warning(f"[news_selfie] Failed to compose cover card: {exc}")
+            return None
+
     def _build_prompt(
         self,
         appearance: BotAppearance,
@@ -784,7 +880,10 @@ class SelfieImageGenerator:
         parts.append(f"在{scene}")
         parts.append(
             "自拍视角，一只手举着手机自拍，手机屏幕可以看到自己和背后场景，"
-            "自然光线，生活化抓拍感，不要摆拍僵硬感"
+            "自然光线，生活化抓拍感，不要摆拍僵硬感。"
+            "构图像游戏周边透卡或收藏卡，bot 角色清晰可辨，"
+            "把 bot 本体放在画面左下角或右下角，形成和新闻主图叠加的前景自拍卡效果，"
+            "不要改变角色的发型、脸型、发色、服装和标志性特征。"
         )
         prompt = "，".join(parts)
         logger.info(
@@ -1326,6 +1425,7 @@ class NewsSelfiePipeline:
             skill_content = skill_md.read_text(encoding="utf-8")
 
         scene_description = self._build_scene_description(selected)
+        is_negative = _is_negative_news(selected)
 
         text_task = self._retry(
             lambda sr=selected, sc=skill_content: (
@@ -1334,13 +1434,21 @@ class NewsSelfiePipeline:
             "Selfie text generation",
             is_success=lambda r: isinstance(r, str) and len(r.strip()) > 0,
         )
-        image_task = self._retry(
-            lambda app=appearance, sd=scene_description, sc=skill_content: (
-                self.image_generator.generate_selfie(app, sd, session, skill_content=sc)
-            ),
-            "Selfie image generation",
-        )
+        if is_negative:
+            image_task = asyncio.sleep(0, result=None)
+        else:
+            image_task = self._retry(
+                lambda app=appearance, sd=scene_description, sc=skill_content: (
+                    self.image_generator.generate_selfie(
+                        app, sd, session, skill_content=sc
+                    )
+                ),
+                "Selfie image generation",
+            )
         selfie_text, selfie_image = await asyncio.gather(text_task, image_task)
+
+        if not is_negative and selfie_image is None and news_image is not None:
+            selfie_image = self.image_generator.compose_cover_card(news_image, appearance)
 
         if not selfie_text:
             selfie_text = f"刚看到一条新闻：{selected['title']}"
@@ -1357,6 +1465,7 @@ class NewsSelfiePipeline:
             "news_title": selected["title"],
             "news_url": selected["url"],
             "category": selected.get("category", "other"),
+            "is_negative": is_negative,
         }
 
     @staticmethod

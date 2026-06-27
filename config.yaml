@@ -694,7 +694,7 @@ image_settings:
   enabled: true
 
   # 图片描述最大长度（字数）。
-  max_image_description_length: 120
+  max_image_description_length: 180
 
   # 视觉识别请求超时秒数。
   vision_timeout_seconds: 90

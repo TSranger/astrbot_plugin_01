@@ -2320,14 +2320,13 @@ class AgenticMemoryPlugin(Star):
             return "skipped"
 
         try:
-            session = self.group_sessions.get(group_id)
-            if not session:
+            session = self.group_sessions.get(group_id) or group_id
+            if group_id not in self.group_sessions:
                 self._log(
                     "warning",
-                    "[agentic_memory] Skip proactive send because no cached session is available for this group. "
+                    "[agentic_memory] No cached session for proactive send, falling back to group_id. "
                     f"group={group_id}, task_id={task_id}",
                 )
-                return "skipped"
             await StarTools.send_message(
                 session,
                 MessageChain().message(reply_text),
@@ -2496,7 +2495,7 @@ class AgenticMemoryPlugin(Star):
                 self._log(
                     "error", f"[agentic_memory] Proactive talk scheduler failed: {exc}"
                 )
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
 
     def _record_bot_send_timestamp(self, group_id: str) -> None:
         """记录 bot 发送消息的时间，供发言密度熔断使用。
@@ -2702,9 +2701,9 @@ class AgenticMemoryPlugin(Star):
                     next_task = task
 
             if next_run is None or next_task is None:
-                wait_seconds = 3600
+                wait_seconds = 30
             else:
-                wait_seconds = max(30, min(3600, int((next_run - now).total_seconds())))
+                wait_seconds = max(5, min(60, int((next_run - now).total_seconds())))
 
             await asyncio.sleep(wait_seconds)
 
@@ -4187,12 +4186,13 @@ class AgenticMemoryPlugin(Star):
                 image_urls = [url.strip() for url in url_matches if url.strip()]
 
         if not message_text and not (image_urls or face_descriptions):
-            raw_text = str(
-                getattr(getattr(event, "message_obj", None), "raw_message", "")
-            ).strip()
-            message_text = raw_text
+            self._log(
+                "info",
+                f"[agentic_memory] Empty non-media group message in group {group_id}, skip processing.",
+            )
+            return
 
-        if message_text.startswith("<Event,") and (image_urls or face_descriptions):
+        if message_text.startswith("<Event,"):
             message_text = ""
 
         if image_urls:
@@ -4231,7 +4231,7 @@ class AgenticMemoryPlugin(Star):
             face_text = " ".join(face_descriptions)
             message_text = f"{message_text} {face_text}" if message_text else face_text
 
-        if not message_text:
+        if not message_text and not (image_urls or face_descriptions):
             self._log(
                 "info",
                 f"[agentic_memory] Empty message text in group {group_id}, skip processing.",
@@ -5045,4 +5045,4 @@ class AgenticMemoryPlugin(Star):
                     await self._rollup_year_to_history(group_id, run_time)
                     await self._cleanup_rolled_up_memory(group_id, run_time)
             except Exception as exc:
-                self._log("error", f"Scheduled memory compression failed: {exc}")
+                self._                                                            
