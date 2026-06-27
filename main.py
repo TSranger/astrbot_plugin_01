@@ -3477,7 +3477,7 @@ class AgenticMemoryPlugin(Star):
             ):
                 self._log(
                     "debug",
-                    f"[agentic_memory] Reply looks truncated, retrying once. group={group_id}, channel={channel}, reply={reply_text[:80]!r}",
+                    f"[智能记忆] 回复看起来被截断，准备重试一次。group={group_id}，channel={channel}，reply={reply_text[:80]!r}",
                 )
                 retry_prompt = (
                     f"{prompt}\n"
@@ -3845,7 +3845,7 @@ class AgenticMemoryPlugin(Star):
             ):
                 self._log(
                     "info",
-                    "[agentic_memory] Proactive reply skipped by cooldown. "
+                    "[智能记忆] 主动回复因冷却被跳过。 "
                     f"group={group_id}, batch_size={len(chat_batch)}",
                 )
                 return
@@ -3878,7 +3878,7 @@ class AgenticMemoryPlugin(Star):
             if not interject_topic:
                 self._log(
                     "info",
-                    "[agentic_memory] Proactive reply skipped because no interject topic is available after fallback. "
+                    "[智能记忆] 主动回复跳过：回退后仍没有可用切入话题。 "
                     f"group={group_id}, batch_size={len(chat_batch)}",
                 )
                 return
@@ -3886,7 +3886,7 @@ class AgenticMemoryPlugin(Star):
             if not should_speak:
                 self._log(
                     "info",
-                    "[agentic_memory] Proactive reply skipped by probability decision. "
+                    "[智能记忆] 主动回复因概率判断被跳过。 "
                     f"group={group_id}, batch_size={len(chat_batch)}, probability={probability:.4f}, "
                     f"random_draw={random_draw:.4f}",
                 )
@@ -4000,13 +4000,13 @@ class AgenticMemoryPlugin(Star):
         Returns:
             The image URL string, or empty string if not found.
         """
-        url = str(getattr(segment, "url", "") or "").strip()
-        if url:
-            return html.unescape(url)
-
         file_value = str(getattr(segment, "file", "") or "").strip()
         if file_value:
             return html.unescape(file_value)
+
+        url = str(getattr(segment, "url", "") or "").strip()
+        if url:
+            return html.unescape(url)
 
         data = getattr(segment, "data", None)
         if isinstance(data, dict):
@@ -4030,12 +4030,12 @@ class AgenticMemoryPlugin(Star):
                 if isinstance(segment_dict, dict):
                     data = segment_dict.get("data", {})
                     if isinstance(data, dict):
-                        url = str(data.get("url", "") or "").strip()
-                        if url:
-                            return html.unescape(url)
                         file_path = str(data.get("file", "") or "").strip()
                         if file_path:
                             return html.unescape(file_path)
+                        url = str(data.get("url", "") or "").strip()
+                        if url:
+                            return html.unescape(url)
             except Exception:
                 pass
 
@@ -4073,6 +4073,8 @@ class AgenticMemoryPlugin(Star):
         max_desc_len = max(
             40, int(image_settings.get("max_image_description_length", 80))
         )
+
+        descriptions: list[str] = []
 
         async def describe_one(url: str, idx: int) -> str:
             start_time = datetime.now()
@@ -4124,16 +4126,12 @@ class AgenticMemoryPlugin(Star):
                 )
                 return ""
 
-        descriptions = [
-            desc
-            for desc in await asyncio.gather(
-                *(
-                    describe_one(url, idx)
-                    for idx, url in enumerate(image_urls[:max_count])
-                )
+        await asyncio.gather(
+            *(
+                describe_one(url, idx)
+                for idx, url in enumerate(image_urls[:max_count])
             )
-            if desc
-        ]
+        )
         return "；".join(descriptions)
 
     async def _download_image_as_data_uri(self, url: str) -> str:
@@ -4164,6 +4162,10 @@ class AgenticMemoryPlugin(Star):
                     )
                     return ""
                 data = file_path.read_bytes()
+                self._log(
+                    "info",
+                    f"[智能记忆] 已读取本地图片文件：{file_path}，大小={len(data)} 字节",
+                )
             except Exception as exc:
                 self._log(
                     "warning",
@@ -4197,6 +4199,10 @@ class AgenticMemoryPlugin(Star):
                             )
                             return ""
                         data = await resp.read()
+                        self._log(
+                            "info",
+                            f"[智能记忆] 已下载图片内容：status={resp.status}，content_type={content_type}，大小={len(data)} 字节，url={normalized_url[:120]}",
+                        )
             except Exception as exc:
                 self._log(
                     "warning",
@@ -4309,7 +4315,7 @@ class AgenticMemoryPlugin(Star):
             image_settings = self.config.get("image_settings", {})
             self._log(
                 "info",
-                f"[agentic_memory] Extracted {len(image_urls)} image URL(s) from message in group {group_id}. "
+                f"[智能记忆] 已从消息中提取 {len(image_urls)} 个图片地址，群号={group_id}。 "
                 f"vision_enabled={image_settings.get('enabled', False)}, "
                 f"original_text_empty={not bool(message_text)}",
             )
@@ -4335,7 +4341,7 @@ class AgenticMemoryPlugin(Star):
         if face_descriptions:
             self._log(
                 "info",
-                f"[agentic_memory] Extracted {len(face_descriptions)} face/sticker description(s) in group {group_id}. "
+                f"[智能记忆] 已从消息中提取 {len(face_descriptions)} 个表情/贴纸描述，群号={group_id}。 "
                 f"descriptions={face_descriptions}",
             )
             face_text = " ".join(face_descriptions)
