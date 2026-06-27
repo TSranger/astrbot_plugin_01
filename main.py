@@ -5045,4 +5045,4 @@ class AgenticMemoryPlugin(Star):
                     await self._rollup_year_to_history(group_id, run_time)
                     await self._cleanup_rolled_up_memory(group_id, run_time)
             except Exception as exc:
-                self._                                                            
+                self._
