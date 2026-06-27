@@ -1086,9 +1086,11 @@ class AgenticMemoryPlugin(Star):
         Returns:
             清洗后的回复文本。
         """
-        cleaned = str(text).strip()
-        if not cleaned:
+        raw_text = str(text).strip()
+        if not raw_text:
             return ""
+
+        cleaned = raw_text
 
         cleaned = cleaned.replace("```json", "").replace("```", "").strip()
 
@@ -1155,6 +1157,12 @@ class AgenticMemoryPlugin(Star):
         cleaned = self._filter_inner_thoughts(cleaned)
 
         if cleaned.lower() in {"null", "none", "nil", "n/a", "[]", "{}", '""', "''"}:
+            return ""
+
+        if re.fullmatch(r"(?:\.{2,}|…{1,})", cleaned):
+            return cleaned
+
+        if not cleaned:
             return ""
 
         return cleaned
@@ -2765,7 +2773,7 @@ class AgenticMemoryPlugin(Star):
                 if not _first_run_done and not self.group_sessions:
                     self._log(
                         "warning",
-                        "[news_selfie] group_sessions is empty at startup; falling back to direct group sending attempts.",
+                        "[news_selfie] group_sessions is empty at startup; news selfie send will skip groups without cached sessions.",
                     )
                 _first_run_done = True
 
@@ -2776,11 +2784,11 @@ class AgenticMemoryPlugin(Star):
                     try:
                         session = self.group_sessions.get(group_id)
                         if not session:
-                            session = group_id
                             self._log(
                                 "warning",
-                                f"[news_selfie] No cached session for group {group_id}, trying group_id directly.",
+                                f"[news_selfie] No cached session for group {group_id}, skipping send.",
                             )
+                            continue
 
                         if self.output_silenced_groups.get(group_id):
                             self._log(
@@ -3423,6 +3431,38 @@ class AgenticMemoryPlugin(Star):
             f"[agentic_memory] Raw reply text (len={len(reply_text)}): {reply_text[:200]!r}",
         )
         reply_text = self._sanitize_reply_text(reply_text)
+        if reply_text and not re.search(r"[。！？!?…]$", reply_text):
+            if re.search(
+                r"(?:当|然|因|因为|所|所以|但|只|只要|还|也|就|而|如果|假如|要不|可是|等等|然后|但是|不过|你|我|他|她|它|这|那|刚|刚刚|先|再|还要|可以|应该)$",
+                reply_text,
+            ):
+                self._log(
+                    "debug",
+                    f"[agentic_memory] Reply looks truncated, retrying once. group={group_id}, channel={channel}, reply={reply_text[:80]!r}",
+                )
+                retry_prompt = (
+                    f"{prompt}\n"
+                    "The previous draft was cut off. Output one complete natural Chinese reply, "
+                    "or output ... only if silence is the best response. Do not end mid-phrase."
+                )
+                try:
+                    retry_text = await self.router.text_chat(
+                        role="chat",
+                        prompt=retry_prompt,
+                        system_prompt=system_prompt,
+                    )
+                    self._log(
+                        "debug",
+                        f"[agentic_memory] Raw truncation retry text (len={len(retry_text)}): {retry_text[:200]!r}",
+                    )
+                    retry_reply = self._sanitize_reply_text(retry_text)
+                    if retry_reply:
+                        reply_text = retry_reply
+                except Exception as exc:
+                    self._log(
+                        "warning",
+                        f"[agentic_memory] Truncation retry failed. group={group_id}, channel={channel}, error={exc}",
+                    )
         if not reply_text:
             retry_prompt = (
                 f"{prompt}\n"
@@ -5045,4 +5085,7 @@ class AgenticMemoryPlugin(Star):
                     await self._rollup_year_to_history(group_id, run_time)
                     await self._cleanup_rolled_up_memory(group_id, run_time)
             except Exception as exc:
-                self._
+                self._log(
+                    "error",
+                    f"[agentic_memory] Daily compression failed: {exc}",
+                )
