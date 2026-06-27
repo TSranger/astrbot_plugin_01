@@ -1038,6 +1038,54 @@ class AgenticMemoryPlugin(Star):
 
         return cleaned
 
+    def _split_reply_text(self, text: str, max_length: int) -> list[str]:
+        """把长回复切成更稳妥的发送片段。
+
+        Args:
+            text: 已清洗的回复文本。
+            max_length: 单段最大长度。
+
+        Returns:
+            切分后的发送片段列表。
+        """
+        cleaned = str(text).strip()
+        if not cleaned or len(cleaned) <= max_length:
+            return [cleaned] if cleaned else []
+
+        sentences = [
+            part.strip()
+            for part in re.split(r"(?<=[。！？!?；;\n])", cleaned)
+            if part.strip()
+        ]
+        segments: list[str] = []
+        current = ""
+
+        for sentence in sentences:
+            if len(sentence) > max_length:
+                if current:
+                    segments.append(current.strip())
+                    current = ""
+                for index in range(0, len(sentence), max_length):
+                    piece = sentence[index : index + max_length].strip()
+                    if piece:
+                        segments.append(piece)
+                continue
+
+            if not current:
+                current = sentence
+                continue
+
+            if len(current) + len(sentence) <= max_length:
+                current += sentence
+            else:
+                segments.append(current.strip())
+                current = sentence
+
+        if current.strip():
+            segments.append(current.strip())
+
+        return segments or [cleaned]
+
     def _quote_chat_messages(
         self,
         messages: list[dict[str, Any]],
@@ -1686,35 +1734,65 @@ class AgenticMemoryPlugin(Star):
             )
             return False
 
-        try:
-            if use_group_direct_send:
-                session = self.group_sessions.get(group_id)
-                if not session:
+        message_limit = max(
+            120,
+            int(
+                self.config.get("reply_settings", {}).get("max_send_chunk_length", 260)
+            ),
+        )
+        send_segments = self._split_reply_text(reply_text, message_limit)
+
+        async def send_one_segment(segment_text: str) -> bool:
+            for attempt in range(2):
+                try:
+                    if use_group_direct_send:
+                        session = self.group_sessions.get(group_id)
+                        if not session:
+                            self._log(
+                                "warning",
+                                "[agentic_memory] Skip sending because no cached session is available for this group. "
+                                f"group={group_id}, channel={channel}",
+                            )
+                            return False
+                        await StarTools.send_message(
+                            session,
+                            MessageChain().message(segment_text),
+                        )
+                    else:
+                        if event is None:
+                            self._log(
+                                "warning",
+                                "[agentic_memory] Skip sending because no event context was provided for event-bound send. "
+                                f"group={group_id}, channel={channel}",
+                            )
+                            return False
+                        await event.send(event.plain_result(segment_text))
+                    return True
+                except Exception as exc:
+                    if attempt == 0:
+                        self._log(
+                            "warning",
+                            "[agentic_memory] Send attempt failed, retrying once. "
+                            f"group={group_id}, channel={channel}, error={exc}, segment={segment_text[:120]!r}",
+                        )
+                        await asyncio.sleep(0.8)
+                        continue
                     self._log(
-                        "warning",
-                        "[agentic_memory] Skip sending because no cached session is available for this group. "
-                        f"group={group_id}, channel={channel}",
+                        "error",
+                        f"[agentic_memory] Failed to send reply. group={group_id}, channel={channel}, error={exc}",
                     )
                     return False
-                await StarTools.send_message(
-                    session,
-                    MessageChain().message(reply_text),
-                )
-            else:
-                if event is None:
-                    self._log(
-                        "warning",
-                        "[agentic_memory] Skip sending because no event context was provided for event-bound send. "
-                        f"group={group_id}, channel={channel}",
-                    )
+
+        sent_any = False
+        for index, segment_text in enumerate(send_segments):
+            if sent_any:
+                await asyncio.sleep(0.6)
+            segment_ok = await send_one_segment(segment_text)
+            if not segment_ok:
+                if not sent_any:
                     return False
-                await event.send(event.plain_result(reply_text))
-        except Exception as exc:
-            self._log(
-                "error",
-                f"[agentic_memory] Failed to send reply. group={group_id}, channel={channel}, error={exc}",
-            )
-            return False
+                break
+            sent_any = True
 
         self._record_reply_history(group_id, reply_text)
 
@@ -1722,8 +1800,11 @@ class AgenticMemoryPlugin(Star):
 
         if cooldown_key:
             self._mark_cooldown(group_id, cooldown_key)
-        self._log("info", f"[{channel}] Sent reply in group {group_id}: {reply_text}")
-        return True
+        self._log(
+            "info",
+            f"[{channel}] Sent reply in group {group_id}: {reply_text[:200]}",
+        )
+        return sent_any
 
     def _stop_event_flow(self, event: AstrMessageEvent) -> None:
         """尽量阻断后续事件流，避免别的逻辑重复处理。
@@ -2475,7 +2556,7 @@ class AgenticMemoryPlugin(Star):
             if next_run is None or next_task is None:
                 wait_seconds = 3600
             else:
-                wait_seconds = max(3600, int((next_run - now).total_seconds()))
+                wait_seconds = max(30, min(3600, int((next_run - now).total_seconds())))
 
             await asyncio.sleep(wait_seconds)
 
@@ -2536,11 +2617,8 @@ class AgenticMemoryPlugin(Star):
 
                 if not _first_run_done and not self.group_sessions:
                     self._log(
-                        "error",
-                        "[news_selfie] group_sessions is empty — no group message "
-                        "has been received since plugin start. News selfie will "
-                        "silently skip all groups. Ensure the bot receives at least "
-                        "one message from each target group.",
+                        "warning",
+                        "[news_selfie] group_sessions is empty at startup; falling back to direct group sending attempts.",
                     )
                 _first_run_done = True
 
@@ -2551,11 +2629,11 @@ class AgenticMemoryPlugin(Star):
                     try:
                         session = self.group_sessions.get(group_id)
                         if not session:
+                            session = group_id
                             self._log(
                                 "warning",
-                                f"[news_selfie] No cached session for group {group_id}, skip.",
+                                f"[news_selfie] No cached session for group {group_id}, trying group_id directly.",
                             )
-                            continue
 
                         for result in results:
                             text = str(result.get("text", "")).strip()
@@ -3142,8 +3220,7 @@ class AgenticMemoryPlugin(Star):
                     "or asks about your identity, you MUST respond naturally in "
                     "character. Answering identity questions is a normal social "
                     "interaction — it does NOT count as 'proactively revealing "
-                    "secrets' or 'breaking role'.\n\n"
-                    + system_prompt
+                    "secrets' or 'breaking role'.\n\n" + system_prompt
                 )
             reply_text = await self.router.text_chat(
                 role="chat",
@@ -3601,11 +3678,15 @@ class AgenticMemoryPlugin(Star):
         if not image_settings.get("enabled", False):
             return ""
 
-        descriptions: list[str] = []
-        for url in image_urls[:3]:
+        max_desc_len = max(
+            40, int(image_settings.get("max_image_description_length", 80))
+        )
+
+        async def describe_one(url: str) -> str:
             prompt = (
-                "请用一句简短的中文描述这张图片的内容，不超过30字。"
-                "如果是表情包，描述表情包的情绪或梗。"
+                f"请用中文详细描述这张图片，重点说清楚图中文字、OCR内容、人物动作、表情包梗和整体语境。"
+                f"尽量保留关键信息，不要少于{max_desc_len // 2}字，也不要超过{max_desc_len}字。"
+                "如果是表情包，优先说明字面内容和情绪。"
                 f"{f'上下文：{context_hint}' if context_hint else ''}"
             )
             try:
@@ -3615,15 +3696,21 @@ class AgenticMemoryPlugin(Star):
                     system_prompt="You describe images concisely in Chinese.",
                     image_urls=[url],
                 )
-                desc = self._sanitize_reply_text(desc)
-                if desc:
-                    descriptions.append(desc)
+                return self._sanitize_reply_text(desc)
             except Exception as exc:
                 self._log(
                     "debug",
                     f"[agentic_memory] Image description failed for {url[:80]}: {exc}",
                 )
+                return ""
 
+        descriptions = [
+            desc
+            for desc in await asyncio.gather(
+                *(describe_one(url) for url in image_urls[:3])
+            )
+            if desc
+        ]
         return "；".join(descriptions)
 
     @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
@@ -3661,11 +3748,7 @@ class AgenticMemoryPlugin(Star):
             self.message_arrival_times[group_id] = deque(maxlen=60)
         self.message_arrival_times[group_id].append(datetime.now())
 
-        message_text = event.message_str.strip() if event.message_str else ""
-        if not message_text:
-            message_text = str(
-                getattr(getattr(event, "message_obj", None), "raw_message", "")
-            ).strip()
+        message_text = str(getattr(event, "message_str", "")).strip()
 
         media_info = self._extract_media_from_event(event)
         image_urls = media_info["image_urls"]

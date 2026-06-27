@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import json
+import mimetypes
 import os
 import re
 from typing import Any
@@ -133,7 +135,12 @@ class PluginLLMRouter:
         if image_urls:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             for url in image_urls:
-                user_content.append({"type": "image_url", "image_url": {"url": url}})
+                user_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": self._normalize_image_reference(url)},
+                    }
+                )
             messages.append({"role": "user", "content": user_content})
         else:
             messages.append({"role": "user", "content": prompt})
@@ -231,6 +238,37 @@ class PluginLLMRouter:
                     parts.append(item)
 
         return "\n".join(part.strip() for part in parts if part.strip()).strip()
+
+    def _normalize_image_reference(self, value: str) -> str:
+        """Normalize an image reference for OpenAI-compatible requests.
+
+        Args:
+            value: Image URL or local file path.
+
+        Returns:
+            A remote URL or a base64 data URL when the local file is readable.
+        """
+        image_ref = str(value).strip()
+        if not image_ref:
+            return image_ref
+        if image_ref.startswith("data:image/"):
+            return image_ref
+        if image_ref.startswith(("http://", "https://")):
+            return image_ref
+        if image_ref.startswith("file://"):
+            image_ref = image_ref[7:]
+        if os.path.exists(image_ref) and os.path.isfile(image_ref):
+            try:
+                with open(image_ref, "rb") as handle:
+                    data = handle.read()
+                mime_type = mimetypes.guess_type(image_ref)[0] or "image/jpeg"
+                encoded = base64.b64encode(data).decode("ascii")
+                return f"data:{mime_type};base64,{encoded}"
+            except Exception as exc:
+                logger.debug(
+                    f"[LLM Router] Failed to encode local image {image_ref}: {exc}"
+                )
+        return image_ref
 
     @staticmethod
     def _resolve_env_var(value: str) -> str:

@@ -1,0 +1,241 @@
+
+1）话语被截断
+日志：
+06-26 21:18:21 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [暂无第一名字，堇风铃999，漫游时空（day185(819244724)] 艹
+06-26 21:18:31 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [暂无第一名字，堇风铃999，漫游时空（day185(819244724)] 确实。忘了还有时间纬度了
+06-26 21:19:21 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [风筝(541952724)] 努力派蒙
+06-26 21:31:33 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [【努力学习ing】扎伊切克(1019155961)] [回复消息 [暂无第一名字，堇风铃999，漫游时空（day185(819244724)] 不过我觉得也是。按理来说就算是专业的运维应该也看不出来我拿token干啥吧？] @暂无第一名字，堇风铃999，漫游时空（day185 (819244724)  这个只能看用什么ai吧
+06-26 21:31:48 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [【努力学习ing】扎伊切克(1019155961)] 具体使用内容只有ai公司知道
+06-26 21:31:54 [info] 薇塔 | 接收 <- 群聊 [涤尘壶大会@0fficial(157903619)] [双塔尼亚(349726761)] [图片] ？？？
+06-26 21:32:05 [info] 薇塔 | 发送 -> 群聊 [涤尘壶大会@0fficial(157903619)] [薇塔(3535252055)] 那当然啦~ 毕竟，有些秘密只有云端的神
+06-26 21:32:06 [info] 薇塔 | 发送 -> 群聊 [涤尘壶大会@0fficial(157903619)] [薇塔(3535252055)] 天慧之眼可是能看见很多东西的，比如……我最近和花火
+06-26 21:32:12 [error] 薇塔 | 发生错误 Error: Timeout: NTEvent serviceAndMethod:NodeIKernelMsgService/sendMsg ListenerName:NodeIKernelMsgListener/onMsgInfoListUpdate EventRet:
+{}
+
+    at f (file:///app/napcat/napcat.mjs:33302:9)
+    at Timeout._onTimeout (file:///app/napcat/napcat.mjs:33312:36)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7)
+
+
+2）这是运行了一晚上+一早上的日志。还是有一些问题。比如图片报错、图片识别内容过于简单（比如没有把图片上附带的文字也识别出来）、图片识别可能有较高的延迟（？）、每天早上八点的新闻+自拍也没有、last_target有些意义不明（能否帮我解释一下这个是什么参数？）
+日志：
+[07:53:47.659] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 风筝/541952724: [ComponentType.Video]                                                                                                                                         
+[07:53:48.302] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.video', repr=Video(type=<ComponentType.Video: 'Video'>, file='2d43c54323cc5ea6bd662e76e99654b2.mp4', url='https://multimedia.nt.qq.com.cn:443/dow
+nload?appid=1415&format=o...<450 chars>', cover='', path='')                                                                                                                                                                                                    
+[07:53:49.049] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=风筝, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'self_id': 3535252055, 'user_id': 5
+41952724, 'time': 1782518004, 'message_id': 423192312, 'message_seq': 423192                                                                                                                                                                                    
+[07:53:49.049] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=风筝, last_target=苍天航路绒绒小狗, text=<Event, {'self_id': 3535252055, 'user_id': 541952724, 'time': 1782518004, 'message_id': 
+423192312, 'message_seq': 423192                                                                                                                                                                                                                                
+[08:25:05.262] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 壶家军忠贞¹昨夜惊梦/3125374455: 好                                                                                                                                            
+[08:25:05.432] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='好')                                                                               
+[08:25:05.433] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=壶家军忠贞¹昨夜惊梦, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=好                           
+[08:25:05.433] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=壶家军忠贞¹昨夜惊梦, last_target=苍天航路绒绒小狗, text=好                                                                       
+[08:25:06.144] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 壶家军忠贞¹昨夜惊梦/3125374455: 就是爱看这个                                                                                                                                  
+[08:25:06.147] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='就是爱看这个')                                                                     
+[08:25:06.148] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=壶家军忠贞¹昨夜惊梦, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=就是爱看这个                 
+[08:25:06.148] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=壶家军忠贞¹昨夜惊梦, last_target=苍天航路绒绒小狗, text=就是爱看这个                                                             
+[08:29:12.271] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 壶家军忠贞¹昨夜惊梦/3125374455: [图片]                                                                                                                                        
+[08:29:16.064] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3..                                                                                                                                                                                            
+[08:29:16.065] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[08:29:16.065] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[08:29:16.065] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhSDUZfcuuzhAhAys                                                                   
+[08:29:16.328] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[08:29:16.328] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.                                                                                                        
+[08:29:16.328] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[08:51:44.001] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 壶家军忠贞¹昨夜惊梦/3125374455: 潘塔罗涅：该死的公鸡，多托雷死了连足足半日的停工缅怀都不值得了                                                                                
+[08:51:45.372] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='潘塔罗涅：该死的公鸡，多托雷死了连足足半日的停工缅怀都不值得了')                   
+[08:51:45.373] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=壶家军忠贞¹昨夜惊梦, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=潘塔罗涅：该死的公鸡，多托雷 
+死了连足足半日的停工缅怀都不值得了                                                                                                                                                                                                                              
+[08:51:45.373] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=壶家军忠贞¹昨夜惊梦, last_target=苍天航路绒绒小狗, text=潘塔罗涅：该死的公鸡，多托雷死了连足足半日的停工缅怀都不值得了
+[08:52:56.265] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] Taketer/154136440: 已切割，多托雷是仙                                                                                                                                         
+[08:52:56.274] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='已切割，多托雷是仙')
+[08:52:56.275] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=Taketer, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=已切割，多托雷是仙
+[08:52:56.276] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=Taketer, last_target=苍天航路绒绒小狗, text=已切割，多托雷是仙
+[09:10:46.344] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 纯白的DIMI大人 DAY1/1951005011: 川贝枇杷糕还挺好喝                                                                                                                            
+[09:10:46.348] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='川贝枇杷糕还挺好喝')
+[09:10:46.349] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=纯白的DIMI大人 DAY1, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=川贝枇杷糕还挺好喝
+[09:10:46.349] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=纯白的DIMI大人 DAY1, last_target=苍天航路绒绒小狗, text=川贝枇杷糕还挺好喝
+[09:10:52.637] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 纯白的DIMI大人 DAY1/1951005011: 川贝枇杷膏还挺好喝                                                                                                                            
+[09:10:52.641] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='川贝枇杷膏还挺好喝')
+[09:10:52.641] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=纯白的DIMI大人 DAY1, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=川贝枇杷膏还挺好喝
+[09:10:52.641] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=纯白的DIMI大人 DAY1, last_target=苍天航路绒绒小狗, text=川贝枇杷膏还挺好喝
+[09:10:52.777] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 1951005011/1951005011:                                                                                                                                                        
+[09:10:52.782] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=1951005011, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'time': 1782522652, 'self_id'
+: 3535252055, 'post_type': 'notice', 'group_id': 157903619, 'user_id': 1951005011,                                              
+[09:10:52.782] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=1951005011, last_target=苍天航路绒绒小狗, text=<Event, {'time': 1782522652, 'self_id': 3535252055, 'post_type': 'notice', 'group_
+id': 157903619, 'user_id': 1951005011,                          
+[09:11:14.273] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 1951005011/1951005011:                                                                                                                                                        
+[09:11:14.277] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=1951005011, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'time': 1782522674, 'self_id'
+: 3535252055, 'post_type': 'notice', 'group_id': 157903619, 'user_id': 1951005011,                                              
+[09:11:14.277] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=1951005011, last_target=苍天航路绒绒小狗, text=<Event, {'time': 1782522674, 'self_id': 3535252055, 'post_type': 'notice', 'group_
+id': 157903619, 'user_id': 1951005011,                          
+[09:26:39.337] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 中午吃肯德基/1186835907: [图片]                                                                                                                                               
+[09:26:42.593] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_6...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_6..                                                            
+[09:26:42.593] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:26:42.594] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:26:42.594] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhTMemaElJ7nzLyCk
+[09:26:42.843] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[09:26:42.844] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619. 
+[09:26:42.844] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[09:29:00.323] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 苍天航路绒绒小狗/1519542488: [图片] [图片] [图片] [图片] [图片] お父さん、私は劉璐です                                                                                        
+[09:29:03.011] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e..                                                            
+[09:29:03.012] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3..                                                            
+[09:29:03.012] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_f...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_f..                                                            
+[09:29:03.012] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_0...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_0..                                                            
+[09:29:03.012] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_a...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_a..                                                            
+[09:29:03.012] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='お父さん、私は劉璐です')
+[09:29:03.013] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 5 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=False                                                                            
+[09:29:03.013] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 5 image(s) found, processing up to 3.                                                                                                                            
+[09:29:03.013] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/3] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhSOZq2uxTi-tjj1y
+[09:29:03.231] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/3] failed to download, skipped.                                                                                                                                            
+[09:29:03.232] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [2/3] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhQXHanmRnxAFV754
+[09:29:03.444] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [2/3] failed to download, skipped.                                                                                                                                            
+[09:29:03.444] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [3/3] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhQ20zTuf5--3jPiG
+[09:29:03.648] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [3/3] failed to download, skipped.                                                                                                                                            
+[09:29:03.648] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 5 image(s) in group 157903619.                                                                                                        
+[09:29:03.650] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=苍天航路绒绒小狗, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=お父さん、私は劉璐です
+[09:29:11.224] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Analysis response was not valid JSON on first attempt, retrying once. group=157903619, response_head=''                                                                             
+[09:29:13.758] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-2 LLM decision. group=157903619, sender=苍天航路绒绒小狗, llm_raw='', is_followup=False, text=お父さん、私は劉璐です
+[09:29:19.836] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:460]: [agentic_memory] Proactive analysis returned no usable JSON result. group=157903619, batch_size=16                                                                                  
+[09:31:38.597] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片]                                                                                                                                                 
+[09:31:39.066] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_c...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_c..                                                            
+[09:31:39.067] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:31:39.067] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:31:39.067] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhQVcAsQp_Hbz_uMr
+[09:31:39.298] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[09:31:39.299] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.                                                                                                        
+[09:31:39.299] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[09:34:10.429] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 芙芙今天吃泡芙/271978120: [引用消息] 这就是篇                                                                                                                                 
+[09:34:10.433] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.reply', repr=Reply(type=<ComponentType.Reply: 'Reply'>, id='423192312', chain=[Video(type=<ComponentType.Video: 'Video'>, file='2d43c54323cc5ea6b
+d662e76e99654b2.mp4', url='/app/.config/QQ/nt_qq_460479655520ae21431                                                            
+[09:34:10.434] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='这就是篇')
+[09:34:10.435] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=芙芙今天吃泡芙, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=这就是篇
+[09:34:10.435] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=芙芙今天吃泡芙, last_target=苍天航路绒绒小狗, text=这就是篇
+[09:36:54.564] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 苍天航路绒绒小狗/1519542488: [图片]                                                                                                                                           
+[09:36:55.515] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_8...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_8..                                                            
+[09:36:55.515] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:36:55.515] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:36:55.515] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhR5-yQeutrpEjmHA
+[09:36:55.775] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[09:36:55.776] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.                                                                                                        
+[09:36:55.776] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[09:37:23.479] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片]                                                                                                                                                 
+[09:37:23.993] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e..                                                            
+[09:37:23.994] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:37:23.994] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:37:23.994] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhSrNqfEqz3k0lti-
+[09:37:24.225] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[09:37:24.225] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.                                                                                                        
+[09:37:24.225] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[09:37:28.848] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片]                                                                                                                                                 
+[09:37:29.265] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_2...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_2..                                                            
+[09:37:29.266] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:37:29.266] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:37:29.266] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhRes0UzWWh0B8jw3
+[09:37:29.506] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.                                                                                                                                            
+[09:37:29.506] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.                                                                                                        
+[09:37:29.507] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.                                                                                                                             
+[09:41:32.060] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 819244724/819244724:                                                                                                                                                          
+[09:41:32.066] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=819244724, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'time': 1782524492, 'self_id':
+ 3535252055, 'post_type': 'notice', 'group_id': 157903619, 'user_id': 819244724,                                                
+[09:41:32.066] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=819244724, last_target=苍天航路绒绒小狗, text=<Event, {'time': 1782524492, 'self_id': 3535252055, 'post_type': 'notice', 'group_i
+d': 157903619, 'user_id': 819244724,                            
+[09:45:04.355] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 3535252055/3535252055:                                                                                                                                                        
+[09:45:04.360] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=3535252055, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'time': 1782524704, 'self_id'
+: 3535252055, 'post_type': 'notice', 'group_id': 157903619, 'user_id': 3535252055,                                              
+[09:45:04.360] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=3535252055, last_target=苍天航路绒绒小狗, text=<Event, {'time': 1782524704, 'self_id': 3535252055, 'post_type': 'notice', 'group_
+id': 157903619, 'user_id': 3535252055,                          
+[09:47:18.896] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 漫游时空/819244724: [At:3535252055] 早安                                                                                                                                      
+[09:47:18.900] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.at', repr=At(type=<ComponentType.At: 'At'>, qq='3535252055', name='薇塔')
+[09:47:18.901] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='早安')                                                                             
+[09:47:18.901] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=966648392, sender=漫游时空, user_id=, mentioned=True, quoted=False, name_hit=False, question_hit=False, text=早安
+[09:47:25.517] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-2 LLM decision. group=966648392, sender=漫游时空, llm_raw='no', is_followup=False, text=早安
+[09:47:25.517] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Immediate mention reply triggered in group 966648392.                                                                                                                               
+[09:47:25.518] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Reply focus resolved. group=966648392, channel=immediate, raw_topic='早安', effective_topic="<Event, {'time': 1782493465, 'self_id': 3535252055, 'post_type': 'notice', 'grou", focu
+s_note=The latest message is only a weak continuation. Use the anchor only to补全省略主语，不要把更早的旧话题重新捡回来。
+[09:47:37.096] [Plug] [INFO] [astrbot_plugin_01.main:460]: [immediate] Sent reply in group 966648392: 早安呀~ 今天也精神满满地去探索世界吧                                                                                                                      
+[09:47:37.097] [Core] [INFO] [respond.stage:183]: Prepare to send - 漫游时空/819244724:                                         
+[09:47:58.959] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 3535252055/3535252055:                                                                                                                                                        
+[09:47:59.066] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=966648392, sender=3535252055, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=<Event, {'time': 1782524878, 'self_id'
+: 3535252055, 'post_type': 'notice', 'group_id': 966648392, 'user_id': 3535252055,                                              
+[09:47:59.066] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=966648392, sender=3535252055, last_target=漫游时空, text=<Event, {'time': 1782524878, 'self_id': 3535252055, 'post_type': 'notice', 'group_id': 966
+648392, 'user_id': 3535252055,                                  
+[09:54:48.947] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] Trouble-Ki/965810823: [图片]                                                                                                                                                  
+[09:54:51.762] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_f...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_f..                                                            
+[09:54:51.763] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:54:51.763] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:54:51.763] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://gchat.qpic.cn/gchatpic_new/0/0-0-BD761972FA6DE33AF082AFB2BD9A7266/0
+[09:54:57.984] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] done in 6.2s. description=2020与2026情感表述反差，配同角色蓝红对比图                                                                                                    
+[09:54:57.985] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=Trouble-Ki, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=[图片内容:2020与2026情感表述反差，配同
+角色蓝红对比图]
+[09:54:57.985] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=Trouble-Ki, last_target=苍天航路绒绒小狗, text=[图片内容:2020与2026情感表述反差，配同角色蓝红对比图]
+[09:55:14.561] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: ？                                                                                                                                                     
+[09:55:14.566] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='？')                                                                               
+[09:55:14.567] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=八奈见米拉, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=？
+[09:55:14.567] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=八奈见米拉, last_target=苍天航路绒绒小狗, text=？                                                                                
+[09:55:58.809] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] Trouble-Ki/965810823: [图片]                                                                                                                                                  
+[09:55:59.890] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_c...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_c..                                                            
+[09:55:59.890] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True                                                                             
+[09:55:59.891] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.                                                                                                                            
+[09:55:59.891] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://gchat.qpic.cn/gchatpic_new/0/0-0-DCCF51BA34B2941338A0C8983BA8577B/0
+[09:56:04.183] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] done in 4.3s. description=这是崩坏：星穹铁道镜流联动瑞幸的冰雪主题宣传图                                                                                                
+[09:56:04.184] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=Trouble-Ki, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=[图片内容:这是崩坏：星穹铁道镜流联动瑞
+幸的冰雪主题宣传图]                                             
+[09:56:04.184] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=Trouble-Ki, last_target=苍天航路绒绒小狗, text=[图片内容:这是崩坏：星穹铁道镜流联动瑞幸的冰雪主题宣传图]
+[10:27:56.742] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片] 
+[10:28:00.506] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_8...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_8..
+[10:28:00.507] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True
+[10:28:00.507] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.
+[10:28:00.507] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhQCKGj3xVamJTdLC
+[10:28:00.764] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.
+[10:28:00.764] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.
+[10:28:00.765] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.
+[10:28:05.750] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片] 
+[10:28:06.174] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_e..
+[10:28:06.174] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True
+[10:28:06.175] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.
+[10:28:06.175] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhRLMhmwXfX5DfSX6
+[10:28:06.404] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.
+[10:28:06.404] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.
+[10:28:06.404] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.
+[10:28:33.771] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] Taketer/154136440: [图片] 
+[10:28:34.560] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.image', repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_a...<99 chars>', url
+='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_a..
+[10:28:34.561] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Extracted 1 image URL(s) from message in group 157903619. vision_enabled=True, original_text_empty=True
+[10:28:34.561] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition: 1 image(s) found, processing up to 1.
+[10:28:34.561] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] starting. url_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhTqgqoFEsh8Cb-sO
+[10:28:34.778] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image [1/1] failed to download, skipped.
+[10:28:34.778] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Image recognition returned no description for 1 image(s) in group 157903619.
+[10:28:34.778] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Empty message text in group 157903619, skip processing.
+[10:28:45.296] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] Taketer/154136440: ？苦也，这也言原 
+[10:28:45.300] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='？苦也，这也言原')
+[10:28:45.300] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=Taketer, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=？苦也，这也言原
+[10:28:45.301] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=Taketer, last_target=苍天航路绒绒小狗, text=？苦也，这也言原
+ source /home/all_data/yladmin/ydong/llm/AstrBot/.venv/bin/activate
+[10:41:18.305] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 纯白的DIMI大人 DAY1/1951005011: [引用消息] 短管的人吹气可以把长管的呛死
+[10:41:18.305] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 纯白的DIMI大人 DAY1/1951005011: [引用消息] 短管的人吹气可以把长管的呛死 
+[10:41:25.795] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.reply', repr=Reply(type=<ComponentType.Reply: 'Reply'>, id='1573196942', chain=[Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/y
+ladmin/ydong/llm/AstrBot/data/temp/media_image_4...<99 chars>', url=
+[10:41:25.795] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='短管的人吹气可以把长管的呛死')
+[10:41:25.797] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=纯白的DIMI大人 DAY1, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=短管的人吹气可以把长管的呛死
+[10:41:25.797] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=纯白的DIMI大人 DAY1, last_target=苍天航路绒绒小狗, text=短管的人吹气可以把长管的呛死
+[10:41:30.293] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: 那样会不会有些暧昧了（指贴贴） 
+[10:41:30.298] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='那样会不会有些暧昧了（指贴贴）')
+[10:41:30.299] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=八奈见米拉, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=那样会不会有些暧昧了（指贴贴）
+[10:41:30.299] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=八奈见米拉, last_target=苍天航路绒绒小狗, text=那样会不会有些暧昧了（指贴贴）

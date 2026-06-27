@@ -358,6 +358,11 @@ special_replies:
       cooldown_seconds: 180
       scope: "whitelist_only"
 
+reply_settings:
+  # 单次发送的建议最大长度。超过后会按句子拆分并带短延迟发送。
+  # 这不是平台硬限制，只是为了降低 sendMsg 超时概率。
+  max_send_chunk_length: 260
+
 proactive_talk_settings:
   # 是否启用“定时主动说话”。
   # 开启后，插件会按下面的 tasks 独立执行。
@@ -690,7 +695,10 @@ image_settings:
   enabled: true
 
   # 图片描述最大长度（字数）。
-  max_image_description_length: 30
+  max_image_description_length: 120
+
+  # 视觉识别请求超时秒数。
+  vision_timeout_seconds: 90
 
   # 单条消息最多识别几张图片。
   max_images_per_message: 3
