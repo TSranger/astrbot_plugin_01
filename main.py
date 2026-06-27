@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import html
 import io
 import json
 import logging
@@ -967,7 +968,7 @@ class AgenticMemoryPlugin(Star):
                 ):
                     return True
         except Exception as exc:
-            self._log("debug", f"检查消息链 @ 提及失败：{exc}")
+            self._log("debug", f"[智能记忆] 检查消息链 @ 提及失败：{exc}")
 
         raw_candidates = [
             str(getattr(event, "message_str", "")).strip(),
@@ -1034,7 +1035,7 @@ class AgenticMemoryPlugin(Star):
                     except Exception:
                         pass
         except Exception as exc:
-            self._log("debug", f"检查消息链引用失败：{exc}")
+            self._log("debug", f"[智能记忆] 检查消息链引用失败：{exc}")
 
         raw_message = str(
             getattr(getattr(event, "message_obj", None), "raw_message", "")
@@ -2069,7 +2070,7 @@ class AgenticMemoryPlugin(Star):
             if not messages:
                 self._log(
                     "warning",
-                    f"[agentic_memory] Skip proactive task without messages: task_id={task_id}",
+                    f"[智能记忆] 主动任务没有消息，已跳过。task_id={task_id}",
                 )
                 continue
 
@@ -2084,8 +2085,8 @@ class AgenticMemoryPlugin(Star):
                 if not re.fullmatch(r"\d{2}:\d{2}", fixed_time):
                     self._log(
                         "warning",
-                        "[agentic_memory] Skip proactive task with invalid fixed time. "
-                        f"task_id={task_id}, time={fixed_time}",
+                        "[智能记忆] 主动任务固定时间格式无效，已跳过。"
+                        f"task_id={task_id}，time={fixed_time}",
                     )
                     continue
 
@@ -2093,8 +2094,8 @@ class AgenticMemoryPlugin(Star):
                 if not (0 <= fixed_hour <= 23 and 0 <= fixed_minute <= 59):
                     self._log(
                         "warning",
-                        "[agentic_memory] Skip proactive task with out-of-range fixed time. "
-                        f"task_id={task_id}, time={fixed_time}",
+                        "[智能记忆] 主动任务固定时间超出范围，已跳过。"
+                        f"task_id={task_id}，time={fixed_time}",
                     )
                     continue
             else:
@@ -2104,8 +2105,8 @@ class AgenticMemoryPlugin(Star):
                 ):
                     self._log(
                         "warning",
-                        "[agentic_memory] Skip proactive task with invalid range. "
-                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                        "[智能记忆] 主动任务时间范围格式无效，已跳过。"
+                        f"task_id={task_id}，start={range_start}，end={range_end}",
                     )
                     continue
 
@@ -2123,8 +2124,8 @@ class AgenticMemoryPlugin(Star):
                 ):
                     self._log(
                         "warning",
-                        "[agentic_memory] Skip proactive task with out-of-range time window. "
-                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                        "[智能记忆] 主动任务时间窗口超出范围，已跳过。"
+                        f"task_id={task_id}，start={range_start}，end={range_end}",
                     )
                     continue
 
@@ -2134,8 +2135,8 @@ class AgenticMemoryPlugin(Star):
                 ):
                     self._log(
                         "warning",
-                        "[agentic_memory] Skip proactive task whose range end is earlier than start. "
-                        f"task_id={task_id}, start={range_start}, end={range_end}",
+                        "[智能记忆] 主动任务结束时间早于开始时间，已跳过。"
+                        f"task_id={task_id}，start={range_start}，end={range_end}",
                     )
                     continue
 
@@ -2315,7 +2316,7 @@ class AgenticMemoryPlugin(Star):
         if self.output_silenced_groups.get(group_id):
             self._log(
                 "info",
-                f"[agentic_memory] Proactive talk blocked by output silence. group={group_id}, task_id={task_id}",
+                f"[智能记忆] 主动发言被输出静默拦截。group={group_id}，task_id={task_id}",
             )
             return "skipped"
 
@@ -3460,13 +3461,13 @@ class AgenticMemoryPlugin(Star):
         except Exception as exc:
             self._log(
                 "error",
-                f"[agentic_memory] Chat generation failed. group={group_id}, channel={channel}, error={exc}",
+                f"[智能记忆] 对话生成失败。group={group_id}，channel={channel}，错误={exc}",
             )
             return ""
 
         self._log(
             "debug",
-            f"[agentic_memory] Raw reply text (len={len(reply_text)}): {reply_text[:200]!r}",
+            f"[智能记忆] 原始回复文本（长度={len(reply_text)}）：{reply_text[:200]!r}",
         )
         reply_text = self._sanitize_reply_text(reply_text)
         if reply_text and not re.search(r"[。！？!?…]$", reply_text):
@@ -3491,7 +3492,7 @@ class AgenticMemoryPlugin(Star):
                     )
                     self._log(
                         "debug",
-                        f"[agentic_memory] Raw truncation retry text (len={len(retry_text)}): {retry_text[:200]!r}",
+                        f"[智能记忆] 截断重试原始文本（长度={len(retry_text)}）：{retry_text[:200]!r}",
                     )
                     retry_reply = self._sanitize_reply_text(retry_text)
                     if retry_reply:
@@ -3499,7 +3500,7 @@ class AgenticMemoryPlugin(Star):
                 except Exception as exc:
                     self._log(
                         "warning",
-                        f"[agentic_memory] Truncation retry failed. group={group_id}, channel={channel}, error={exc}",
+                        f"[智能记忆] 截断重试失败。group={group_id}，channel={channel}，错误={exc}",
                     )
         if not reply_text:
             retry_prompt = (
@@ -3515,25 +3516,25 @@ class AgenticMemoryPlugin(Star):
                 )
                 self._log(
                     "debug",
-                    f"[agentic_memory] Raw retry text (len={len(retry_text)}): {retry_text[:200]!r}",
+                    f"[智能记忆] 空回复重试原始文本（长度={len(retry_text)}）：{retry_text[:200]!r}",
                 )
             except Exception as exc:
                 self._log(
                     "error",
-                    "[agentic_memory] Chat retry after empty sanitize failed. "
-                    f"group={group_id}, channel={channel}, error={exc}",
+                    "[智能记忆] 文本清洗为空后的重试失败。"
+                    f"group={group_id}，channel={channel}，错误={exc}",
                 )
                 return ""
             reply_text = self._sanitize_reply_text(retry_text)
             self._log(
                 "debug",
-                f"[agentic_memory] After sanitize (retry): {reply_text[:200]!r}",
+                f"[智能记忆] 重试后清洗结果：{reply_text[:200]!r}",
             )
             if not reply_text:
                 self._log(
                     "warning",
-                    "[agentic_memory] Chat generation returned empty reply after retry. "
-                    f"group={group_id}, channel={channel}, topic={topic[:80]!r}",
+                    "[智能记忆] 重试后仍返回空回复。"
+                    f"group={group_id}，channel={channel}，topic={topic[:80]!r}",
                 )
                 # 薇塔设定里允许在无语时输出省略号，避免空文本直接丢失回应。
                 return "..."
@@ -3553,7 +3554,7 @@ class AgenticMemoryPlugin(Star):
             except Exception as exc:
                 self._log(
                     "error",
-                    f"[agentic_memory] Chat retry failed. group={group_id}, channel={channel}, error={exc}",
+                    f"[智能记忆] 聊天重试失败。group={group_id}，channel={channel}，错误={exc}",
                 )
                 return reply_text
             return self._sanitize_reply_text(retry_text)
@@ -3909,16 +3910,16 @@ class AgenticMemoryPlugin(Star):
             if not sent:
                 self._log(
                     "info",
-                    f"Proactive reply was skipped. group={group_id}, topic={interject_topic}",
+                f"[智能记忆] 主动回复已跳过。group={group_id}，topic={interject_topic}",
                 )
             else:
                 self._log(
                     "info",
-                    "[agentic_memory] Proactive reply send succeeded. "
-                    f"group={group_id}, batch_size={len(chat_batch)}, topic={interject_topic[:120]!r}",
+                "[智能记忆] 主动回复发送成功。 "
+                f"group={group_id}，batch_size={len(chat_batch)}，topic={interject_topic[:120]!r}",
                 )
         except Exception as exc:
-            self._log("error", f"Background memory task failed: {exc}")
+            self._log("error", f"[智能记忆] 后台记忆任务失败：{exc}")
 
     def _extract_media_from_event(self, event: AstrMessageEvent) -> dict[str, Any]:
         """从事件里提取图片 URL 和表情描述。
@@ -3937,7 +3938,7 @@ class AgenticMemoryPlugin(Star):
                 segment_type = str(getattr(segment, "type", "")).strip().lower()
                 self._log(
                     "info",
-                    f"[agentic_memory][media] segment type={segment_type!r}, repr={repr(segment)[:200]}",
+                    f"[智能记忆][媒体] 片段类型={segment_type!r}，repr={repr(segment)[:200]}",
                 )
 
                 if segment_type == "image":
@@ -4001,26 +4002,26 @@ class AgenticMemoryPlugin(Star):
         """
         url = str(getattr(segment, "url", "") or "").strip()
         if url:
-            return url
+            return html.unescape(url)
 
         file_value = str(getattr(segment, "file", "") or "").strip()
         if file_value:
-            return file_value
+            return html.unescape(file_value)
 
         data = getattr(segment, "data", None)
         if isinstance(data, dict):
             url = str(data.get("url", "") or "").strip()
             if url:
-                return url
+                return html.unescape(url)
             file_path = str(data.get("file", "") or "").strip()
             if file_path:
-                return file_path
+                return html.unescape(file_path)
 
         raw = getattr(segment, "raw", None)
         if raw and isinstance(raw, str):
             match = re.search(r"\[CQ:image,[^\]]*url=([^,\]]+)", raw)
             if match:
-                return match.group(1).strip()
+                return html.unescape(match.group(1).strip())
 
         to_dict = getattr(segment, "toDict", None)
         if callable(to_dict):
@@ -4031,10 +4032,10 @@ class AgenticMemoryPlugin(Star):
                     if isinstance(data, dict):
                         url = str(data.get("url", "") or "").strip()
                         if url:
-                            return url
+                            return html.unescape(url)
                         file_path = str(data.get("file", "") or "").strip()
                         if file_path:
-                            return file_path
+                            return html.unescape(file_path)
             except Exception:
                 pass
 
@@ -4148,17 +4149,26 @@ class AgenticMemoryPlugin(Star):
             return ""
 
         MAX_BYTES = 5 * 1024 * 1024
+        normalized_url = html.unescape(str(url).strip())
 
-        if url.startswith("data:image/"):
-            return url
+        if normalized_url.startswith("data:image/"):
+            return normalized_url
 
-        if url.startswith("file://") or Path(url).is_absolute():
+        if normalized_url.startswith("file://") or Path(normalized_url).is_absolute():
             try:
-                file_path = Path(url.replace("file://", "", 1))
+                file_path = Path(normalized_url.replace("file://", "", 1))
                 if not file_path.exists():
+                    self._log(
+                        "warning",
+                        f"[智能记忆] 图片本地文件不存在：{file_path}",
+                    )
                     return ""
                 data = file_path.read_bytes()
-            except Exception:
+            except Exception as exc:
+                self._log(
+                    "warning",
+                    f"[智能记忆] 读取本地图片失败：{file_path}，错误：{exc}",
+                )
                 return ""
         else:
             proxy = self.config.get("news_selfie_settings", {}).get(
@@ -4167,13 +4177,31 @@ class AgenticMemoryPlugin(Star):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        url,
+                        normalized_url,
                         timeout=aiohttp.ClientTimeout(total=10),
                         proxy=proxy,
                     ) as resp:
-                        resp.raise_for_status()
+                        content_type = resp.headers.get("Content-Type", "")
+                        if resp.status != 200:
+                            error_preview = await resp.text(errors="ignore")
+                            self._log(
+                                "warning",
+                                f"[智能记忆] 图片下载返回非 200 状态。status={resp.status}，content_type={content_type}，url={normalized_url[:120]}，preview={error_preview[:200]!r}",
+                            )
+                            return ""
+                        if "image" not in content_type.lower() and not normalized_url.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+                            error_preview = await resp.text(errors="ignore")
+                            self._log(
+                                "warning",
+                                f"[智能记忆] 图片下载内容类型异常。content_type={content_type}，url={normalized_url[:120]}，preview={error_preview[:200]!r}",
+                            )
+                            return ""
                         data = await resp.read()
-            except Exception:
+            except Exception as exc:
+                self._log(
+                    "warning",
+                    f"[智能记忆] 图片网络下载失败：url={normalized_url[:120]}，proxy={proxy}，错误类型={type(exc).__name__}，错误={exc}",
+                )
                 return ""
 
             if len(data) > MAX_BYTES:
@@ -4182,7 +4210,7 @@ class AgenticMemoryPlugin(Star):
         if not data:
             return ""
 
-        is_gif = url.lower().endswith(".gif")
+        is_gif = normalized_url.lower().endswith(".gif")
         compressed = False
         if not is_gif:
             try:
@@ -4208,9 +4236,9 @@ class AgenticMemoryPlugin(Star):
             mime = "image/jpeg"
         elif is_gif:
             mime = "image/gif"
-        elif url.lower().endswith(".png"):
+        elif normalized_url.lower().endswith(".png"):
             mime = "image/png"
-        elif url.lower().endswith(".webp"):
+        elif normalized_url.lower().endswith(".webp"):
             mime = "image/webp"
         else:
             mime = "image/jpeg"
@@ -4237,7 +4265,7 @@ class AgenticMemoryPlugin(Star):
         ).strip()
         if not group_id:
             self._log(
-                "warning", "[agentic_memory] Received group message without group_id."
+                "warning", "[智能记忆] 收到群消息但没有 group_id。"
             )
             return
         if not self._is_group_allowed(group_id):
@@ -4296,7 +4324,7 @@ class AgenticMemoryPlugin(Star):
                 else:
                     self._log(
                         "info",
-                        f"[agentic_memory] Image recognition returned no description for {len(image_urls)} image(s) in group {group_id}.",
+                        f"[智能记忆] 图片识别没有返回描述，共 {len(image_urls)} 张，群号={group_id}。",
                     )
             else:
                 image_tags = " ".join(f"[图片:{url}]" for url in image_urls[:3])
@@ -4328,7 +4356,7 @@ class AgenticMemoryPlugin(Star):
         trigger_state = self._build_trigger_state(event, message_text)
         self._log(
             "info",
-            "[agentic_memory] Received group message. "
+            "[智能记忆] 收到群消息。 "
             f"group={group_id}, sender={sender_name}, user_id={user_id}, mentioned={trigger_state['is_mentioned']}, "
             f"quoted={trigger_state['is_quoted']}, name_hit={trigger_state['name_hit']}, "
             f"question_hit={trigger_state['question_pattern_hit']}, "
