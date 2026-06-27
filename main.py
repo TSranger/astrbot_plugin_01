@@ -376,7 +376,7 @@ class AgenticMemoryPlugin(Star):
 
         self._log(
             "info",
-            "[agentic_memory] Plugin initialized. "
+            "[智能记忆] 插件已初始化。 "
             f"file_logging_enabled={self.file_logging_enabled}, "
             f"raw_event_debug_enabled={self.raw_event_debug_enabled}, "
             f"log_file={self._resolve_plugin_log_path()}",
@@ -572,7 +572,7 @@ class AgenticMemoryPlugin(Star):
             解析后的 YAML 配置。
         """
         if not path.exists():
-            logger.error(f"配置文件不存在：{path}")
+            logger.error(f"[agentic_memory] 配置文件不存在：{path}")
             return {}
         with path.open("r", encoding="utf-8") as file:
             loaded = yaml.safe_load(file) or {}
@@ -1803,8 +1803,8 @@ class AgenticMemoryPlugin(Star):
                         if repaired_text != cleaned:
                             self._log(
                                 "info",
-                                "[agentic_memory] Recovered JSON response with light repair. "
-                                f"original_length={len(cleaned)}, repaired_length={len(repaired_text)}",
+                                "[agentic_memory] 已通过轻量修复恢复 JSON 响应。 "
+                                f"原始长度={len(cleaned)}，修复后长度={len(repaired_text)}",
                             )
                         return loaded
                 except json.JSONDecodeError:
@@ -1815,9 +1815,9 @@ class AgenticMemoryPlugin(Star):
                 bracket_delta = candidate.count("[") - candidate.count("]")
                 self._log(
                     "warning",
-                    "[agentic_memory] Failed to parse JSON response. "
-                    f"error={exc}; brace_delta={brace_delta}; bracket_delta={bracket_delta}; "
-                    f"length={len(cleaned)}; head={cleaned[:200]!r}; tail={cleaned[-200:]!r}",
+                    "[agentic_memory] 解析 JSON 响应失败。 "
+                    f"错误={exc}；大括号差值={brace_delta}；中括号差值={bracket_delta}；"
+                    f"长度={len(cleaned)}；开头={cleaned[:200]!r}；结尾={cleaned[-200:]!r}",
                 )
             return {}
 
@@ -2373,8 +2373,8 @@ class AgenticMemoryPlugin(Star):
             )
             self._log(
                 "error",
-                "[agentic_memory] Failed to send scheduled proactive reply. "
-                f"group={group_id}, task_id={task_id}, fatal={fatal_error}, error={exc}",
+                "[scheduled_proactive] 发送定时主动回复失败。 "
+                f"group={group_id}，task_id={task_id}，是否致命={fatal_error}，错误={exc}",
             )
             return "fatal_failure" if fatal_error else "retryable_failure"
 
@@ -2675,7 +2675,7 @@ class AgenticMemoryPlugin(Star):
         if not self.news_selfie_pipeline:
             return
 
-        self._log("debug", "[news_selfie] 新闻自拍调度器已启动。")
+            self._log("debug", "[新闻自拍] 新闻自拍调度器已启动。")
 
         _first_run_done = False
 
@@ -2765,7 +2765,7 @@ class AgenticMemoryPlugin(Star):
                 try:
                     results = await self.news_selfie_pipeline.run()
                 except Exception as exc:
-                    self._log("error", f"[news_selfie] 新闻自拍管道执行失败：{exc}")
+                    self._log("error", f"[新闻自拍] 新闻自拍管道执行失败：{exc}")
                     self.news_selfie_task_last_run_dates[task_id] = today_text
                     self.db.upsert_news_selfie_task_state(
                         task_id,
@@ -2811,7 +2811,7 @@ class AgenticMemoryPlugin(Star):
                 if not _first_run_done and not self.group_sessions:
                     self._log(
                         "warning",
-                        "[news_selfie] 启动时尚未缓存任何群会话，新闻自拍会跳过没有缓存会话的群。",
+                        "[新闻自拍] 启动时尚未缓存任何群会话，新闻自拍会跳过没有缓存会话的群。",
                     )
                 _first_run_done = True
 
@@ -2824,7 +2824,7 @@ class AgenticMemoryPlugin(Star):
                         if not session:
                             self._log(
                                 "warning",
-                                f"[news_selfie] 群号 {group_id} 没有缓存会话，已跳过发送。",
+                                f"[新闻自拍] 群号 {group_id} 没有缓存会话，已跳过发送。",
                             )
                             continue
 
@@ -3667,7 +3667,7 @@ class AgenticMemoryPlugin(Star):
             merged = self._sanitize_reply_text(merged)
             return merged or f"{event_one}；{event_two}"
         except Exception as exc:
-            self._log("error", f"Failed to merge dynamic events: {exc}")
+            self._log("error", f"[agentic_memory] 合并动态事件失败：{exc}")
             return f"{event_one}；{event_two}"
 
     async def _process_memory_task(
@@ -3979,7 +3979,7 @@ class AgenticMemoryPlugin(Star):
                         if mface_id is not None:
                             face_descriptions.append(f"[表情:{mface_id}]")
         except Exception as exc:
-            self._log("debug", f"Failed to extract media from event: {exc}")
+            self._log("debug", f"[agentic_memory] 从事件中提取媒体失败：{exc}")
 
         return {
             "image_urls": image_urls,
@@ -4148,6 +4148,9 @@ class AgenticMemoryPlugin(Star):
             return ""
 
         MAX_BYTES = 5 * 1024 * 1024
+
+        if url.startswith("data:image/"):
+            return url
 
         if url.startswith("file://") or Path(url).is_absolute():
             try:

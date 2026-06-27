@@ -524,7 +524,7 @@ class ArticleFetcher:
 
         if exc_info is not None:
             logger.warning(
-                f"[news_selfie] 抓取文章失败：{url[:80]}，错误：{exc_info}"
+                f"[新闻自拍] 抓取文章失败：{url[:80]}，错误：{exc_info}"
             )
             return {"content": "", "image_url": "", "error": str(exc_info)}
 
@@ -595,19 +595,29 @@ class ArticleFetcher:
         if session is None:
             session = aiohttp.ClientSession()
         try:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=15), proxy=self.proxy
-            ) as resp:
-                resp.raise_for_status()
-                content_type = resp.headers.get("Content-Type", "")
-                if "image" not in content_type and not url.lower().endswith(
-                    (".jpg", ".jpeg", ".png", ".webp")
-                ):
-                    logger.warning(
-                        f"[news_selfie] 不是图片内容：{url[:80]}（Content-Type：{content_type}）"
-                    )
+            if url.startswith("data:image/"):
+                _, encoded = url.split(",", 1)
+                data = base64.b64decode(encoded)
+            elif url.startswith("file://") or Path(url).is_absolute():
+                file_path = Path(url.replace("file://", "", 1))
+                if not file_path.exists():
+                    logger.warning(f"[新闻自拍] 图片文件不存在：{file_path}")
                     return None
-                data = await resp.read()
+                data = file_path.read_bytes()
+            else:
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=15), proxy=self.proxy
+                ) as resp:
+                    resp.raise_for_status()
+                    content_type = resp.headers.get("Content-Type", "")
+                    if "image" not in content_type and not url.lower().endswith(
+                        (".jpg", ".jpeg", ".png", ".webp")
+                    ):
+                        logger.warning(
+                            f"[新闻自拍] 不是图片内容：{url[:80]}（Content-Type：{content_type}）"
+                        )
+                        return None
+                    data = await resp.read()
         except Exception as exc:
             logger.warning(f"[新闻自拍] 下载图片失败：{url[:80]}，错误：{exc}")
             return None
@@ -1067,7 +1077,7 @@ class SelfieImageGenerator:
         endpoint = self._get_tongyi_endpoint()
         payload = self._build_tongyi_payload(prompt, endpoint)
         logger.info(
-            f"[news_selfie] Tongyi Wanxiang request: model={self.model} "
+            f"[新闻自拍] 通义万相请求：model={self.model} "
             f"endpoint={endpoint} prompt[:100]={prompt[:100]}"
         )
 
@@ -1280,26 +1290,26 @@ class NewsSelfiePipeline:
             except Exception as exc:
                 if attempt <= self._MAX_RETRIES:
                     logger.warning(
-                        f"[news_selfie] {step_name} 第 {attempt} 次失败：{exc}，"
+                        f"[新闻自拍] {step_name} 第 {attempt} 次失败：{exc}，"
                         f"将在 {self._RETRY_DELAY_SECONDS} 秒后重试。"
                     )
                     await asyncio.sleep(self._RETRY_DELAY_SECONDS)
                 else:
                     logger.error(
-                        f"[news_selfie] {step_name} 连续重试 {attempt} 次后仍然失败：{exc}"
+                        f"[新闻自拍] {step_name} 连续重试 {attempt} 次后仍然失败：{exc}"
                     )
                 continue
 
             if is_success is not None and not is_success(result):
                 if attempt <= self._MAX_RETRIES:
                     logger.warning(
-                        f"[news_selfie] {step_name} 第 {attempt} 次返回空结果或无效结果，"
+                        f"[新闻自拍] {step_name} 第 {attempt} 次返回空结果或无效结果，"
                         f"将在 {self._RETRY_DELAY_SECONDS} 秒后重试。"
                     )
                     await asyncio.sleep(self._RETRY_DELAY_SECONDS)
                 else:
                     logger.error(
-                        f"[news_selfie] {step_name} 已重试 {attempt} 次，仍返回空结果或无效结果。"
+                        f"[新闻自拍] {step_name} 已重试 {attempt} 次，仍返回空结果或无效结果。"
                     )
                 continue
 

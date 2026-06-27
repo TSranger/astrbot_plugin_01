@@ -263,9 +263,7 @@ class PluginLLMRouter:
                 encoded = base64.b64encode(data).decode("ascii")
                 return f"data:{mime_type};base64,{encoded}"
             except Exception as exc:
-                logger.debug(
-                    f"[LLM Router] Failed to encode local image {image_ref}: {exc}"
-                )
+                logger.debug(f"[LLM 路由] 编码本地图片失败 {image_ref}：{exc}")
         return image_ref
 
     @staticmethod

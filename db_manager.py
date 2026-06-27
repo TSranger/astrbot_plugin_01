@@ -142,7 +142,7 @@ class MemoryDBManager:
                 """
             )
             conn.commit()
-            logger.info(f"SQLite database initialized: {self.db_path}")
+            logger.info(f"[数据库] SQLite 数据库已初始化：{self.db_path}")
 
     def add_summary(
         self,
