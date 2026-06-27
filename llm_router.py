@@ -83,6 +83,8 @@ class PluginLLMRouter:
                 )
             except Exception as exc:
                 logger.error(f"[LLM 路由] 角色 {role} 的插件路由调用失败：{exc}")
+                if image_urls:
+                    raise
                 if not self.fallback_to_default:
                     raise
         return await self._call_astrbot_default(prompt, system_prompt)
@@ -172,11 +174,13 @@ class PluginLLMRouter:
         }
 
         if image_urls:
+            first_image = str(image_urls[0]) if image_urls else ""
             logger.info(
-                f"[LLM 路由] 角色 {role} 正在发送视觉请求："
+                f"[LLM 路由] 角色 vision 正在发送视觉请求："
                 f"mode={self.mode}，provider_type={role_config.get('provider_type')}，"
                 f"model={model}，image_count={len(image_urls)}，"
-                f"images_are_data_uri={all(str(url).startswith('data:image/') for url in image_urls)}"
+                f"images_are_data_uri={all(str(url).startswith('data:image/') for url in image_urls)}，"
+                f"first_image_prefix={first_image[:120]}"
             )
 
         headers = {
