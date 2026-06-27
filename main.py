@@ -833,7 +833,11 @@ class AgenticMemoryPlugin(Star):
         return False
 
     async def _is_sender_followup_to_bot(
-        self, group_id: str, sender_name: str, message_text: str
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        sender_name: str,
+        message_text: str,
     ) -> bool:
         """Use LLM semantic check to decide if a sender is talking to the bot.
 
@@ -852,12 +856,18 @@ class AgenticMemoryPlugin(Star):
         if not entry:
             return False
         _last_time, last_target_sender, bot_last_reply = entry
+        if self._extract_is_quoted(event):
+            self._log(
+                "info",
+                f"[agentic_memory] 检测到引用机器人消息，直接判定为跟随。群号={group_id}，发送者={sender_name}，内容={message_text[:120]}",
+            )
+            return True
         if sender_name != last_target_sender:
             self._log(
                 "info",
-                "[agentic_memory] Followup stage-1 mismatch. "
-                f"group={group_id}, sender={sender_name}, last_target={last_target_sender}, "
-                f"text={message_text[:120]}",
+                "[agentic_memory] 跟随判定第 1 阶段不匹配。"
+                f"群号={group_id}，发送者={sender_name}，上次目标={last_target_sender}，"
+                f"内容={message_text[:120]}",
             )
             return False
 
@@ -883,9 +893,9 @@ class AgenticMemoryPlugin(Star):
         is_followup = str(result).strip().lower().startswith("yes")
         self._log(
             "info",
-            "[agentic_memory] Followup stage-2 LLM decision. "
-            f"group={group_id}, sender={sender_name}, llm_raw={str(result)[:120]!r}, "
-            f"is_followup={is_followup}, text={message_text[:120]}",
+            "[agentic_memory] 跟随判定第 2 阶段大模型结果。"
+            f"群号={group_id}，发送者={sender_name}，模型原始输出={str(result)[:120]!r}，"
+            f"是否跟随={is_followup}，内容={message_text[:120]}",
         )
         return is_followup
 
@@ -2736,7 +2746,7 @@ class AgenticMemoryPlugin(Star):
                 if persisted_state.get("last_run_date") == today_text:
                     self._log(
                         "info",
-                        f"[news_selfie] Task {task_id} already processed today, skip duplicate run. last_status={persisted_state.get('last_status', '')}, last_run_time={persisted_state.get('last_run_time', '')}",
+                        f"[新闻自拍] 任务 {task_id} 今日已处理，跳过重复执行。最近状态={persisted_state.get('last_status', '')}，最近时间={persisted_state.get('last_run_time', '')}",
                     )
                     self.news_selfie_task_last_run_dates[task_id] = today_text
                     self.news_selfie_task_planned_times.pop(task_id, None)
@@ -2744,7 +2754,7 @@ class AgenticMemoryPlugin(Star):
 
                 self._log(
                     "debug",
-                    f"[news_selfie] Triggering task {task_id} at {now.isoformat(timespec='seconds')} planned={planned.isoformat(timespec='seconds')}",
+                    f"[新闻自拍] 触发任务 {task_id}，当前时间={now.isoformat(timespec='seconds')}，计划时间={planned.isoformat(timespec='seconds')}",
                 )
                 self.db.upsert_news_selfie_task_state(
                     task_id,
@@ -2777,7 +2787,7 @@ class AgenticMemoryPlugin(Star):
                 if not results:
                     self._log(
                         "debug",
-                        f"[news_selfie] No result for task {task_id}.",
+                        f"[新闻自拍] 任务 {task_id} 没有生成结果。",
                     )
                     continue
 
@@ -2794,7 +2804,7 @@ class AgenticMemoryPlugin(Star):
                 if not configured_groups:
                     self._log(
                         "warning",
-                        "[news_selfie] No groups configured for sending.",
+                        "[新闻自拍] 未配置可发送的群列表。",
                     )
                     continue
 
@@ -2841,12 +2851,12 @@ class AgenticMemoryPlugin(Star):
                             await StarTools.send_message(session, chain)
                             self._log(
                                 "info",
-                                f"[news_selfie] 已向群号 {group_id} 发送新闻自拍：{text[:80]}",
+                                f"[新闻自拍] 已向群号 {group_id} 发送新闻自拍：{text[:80]}",
                             )
                     except Exception as exc:
                         self._log(
                             "error",
-                            f"[news_selfie] 向群号 {group_id} 发送失败：{exc}",
+                            f"[新闻自拍] 向群号 {group_id} 发送失败：{exc}",
                         )
 
     def _format_db_time(self, value: str | None) -> str:
@@ -4055,8 +4065,8 @@ class AgenticMemoryPlugin(Star):
         )
         self._log(
             "info",
-            f"[agentic_memory] Image recognition: {len(image_urls)} image(s) found, "
-            f"processing up to {max_count}.",
+            f"[agentic_memory] 图片识别开始：共发现 {len(image_urls)} 张图片，"
+            f"本次最多处理 {max_count} 张。",
         )
 
         max_desc_len = max(
@@ -4067,15 +4077,14 @@ class AgenticMemoryPlugin(Star):
             start_time = datetime.now()
             self._log(
                 "info",
-                f"[agentic_memory] Image [{idx + 1}/{max_count}] starting. "
-                f"url_prefix={url[:80]}",
+                f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 开始处理，链接前缀={url[:80]}",
             )
 
             data_uri = await self._download_image_as_data_uri(url)
             if not data_uri:
                 self._log(
                     "info",
-                    f"[agentic_memory] Image [{idx + 1}/{max_count}] failed to download, skipped.",
+                    f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 下载失败，已跳过。",
                 )
                 return ""
             prompt = (
@@ -4096,21 +4105,21 @@ class AgenticMemoryPlugin(Star):
                 if desc:
                     self._log(
                         "info",
-                        f"[agentic_memory] Image [{idx + 1}/{max_count}] done in {elapsed:.1f}s. "
-                        f"description={desc[:80]}",
+                        f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 已完成，耗时 {elapsed:.1f} 秒，"
+                        f"描述={desc[:80]}",
                     )
                     descriptions.append(desc)
                 else:
                     self._log(
                         "info",
-                        f"[agentic_memory] Image [{idx + 1}/{max_count}] VLM returned empty after {elapsed:.1f}s.",
+                        f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 视觉模型返回空结果，耗时 {elapsed:.1f} 秒。",
                     )
                 return desc
             except Exception as exc:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 self._log(
                     "info",
-                    f"[agentic_memory] Image [{idx + 1}/{max_count}] VLM call failed after {elapsed:.1f}s: {exc}",
+                    f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 视觉模型调用失败，耗时 {elapsed:.1f} 秒，错误：{exc}",
                 )
                 return ""
 
@@ -4429,7 +4438,10 @@ class AgenticMemoryPlugin(Star):
                 return
 
         is_followup = await self._is_sender_followup_to_bot(
-            group_id, sender_name, message_text
+            event,
+            group_id,
+            sender_name,
+            message_text,
         )
         if is_followup:
             self._log(

@@ -286,9 +286,7 @@ class NewsFetcher:
             "apiKey": self.api_key,
         }
 
-        logger.info(
-            f"[新闻自拍] 正在从新闻接口获取新闻标题，国家/地区={self.country}"
-        )
+        logger.info(f"[新闻自拍] 正在从新闻接口获取新闻标题，国家/地区={self.country}")
 
         should_close = session is None
         if session is None:
@@ -1371,7 +1369,7 @@ class NewsSelfiePipeline:
             count = min(self.max_selfies_per_run, len(fresh_news))
             selected_list = random.sample(fresh_news, count)
             logger.info(
-                f"[news_selfie] 本轮从 {len(fresh_news)} 条新新闻中选出 {count} 条进行处理。"
+                f"[新闻自拍] 本轮从 {len(fresh_news)} 条新新闻中选出 {count} 条进行处理。"
             )
 
             results: list[dict[str, Any]] = []
@@ -1408,7 +1406,7 @@ class NewsSelfiePipeline:
 
         appearance = resolve_bot_appearance(skill_dir)
         logger.info(
-            f"[news_selfie] 已解析 bot 外观：是否有 GIF={appearance.reference_gif is not None}，"
+            f"[新闻自拍] 已解析 bot 外观：是否有动画图={appearance.reference_gif is not None}，"
             f"参考图片数={len(appearance.reference_images)}，角色描述={appearance.text_description[:30]}"
         )
 
