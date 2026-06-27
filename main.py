@@ -3458,7 +3458,8 @@ class AgenticMemoryPlugin(Star):
                     "[agentic_memory] Chat generation returned empty reply after retry. "
                     f"group={group_id}, channel={channel}, topic={topic[:80]!r}",
                 )
-                return ""
+                # 薇塔设定里允许在无语时输出省略号，避免空文本直接丢失回应。
+                return "..."
 
         if (
             reply_text
@@ -3654,7 +3655,7 @@ class AgenticMemoryPlugin(Star):
                 f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
                 f"matches_preference={matches_preference}, topic_ready={bool(interject_topic)}, "
                 f"used_fallback_topic={used_fallback_topic}, summary={summary_text[:120]!r}, "
-                f"topic={interject_topic[:120]!r}",
+                f"knowledge_confidence={knowledge_confidence:.2f}, topic={interject_topic[:120]!r}",
             )
 
             if summary_text:
@@ -3675,6 +3676,23 @@ class AgenticMemoryPlugin(Star):
 
             profile_updates = analysis.get("profile_updates", {})
             nickname_to_user_id: dict[str, str] = {}
+            profile_update_count = (
+                len(profile_updates) if isinstance(profile_updates, dict) else 0
+            )
+            dynamic_events = analysis.get("dynamic_events", {})
+            dynamic_event_count = (
+                len(dynamic_events) if isinstance(dynamic_events, dict) else 0
+            )
+
+            self._log(
+                "info",
+                "[agentic_memory] Proactive analysis payload. "
+                f"group={group_id}, summary={summary_text[:120]!r}, "
+                f"is_significant={is_significant}, matches_preference={matches_preference}, "
+                f"knowledge_confidence={knowledge_confidence:.2f}, "
+                f"interject_topic={interject_topic[:120]!r}, "
+                f"profile_update_groups={profile_update_count}, dynamic_event_groups={dynamic_event_count}",
+            )
             for item in chat_batch:
                 uid = str(item.get("user_id", "")).strip()
                 snd = str(item.get("sender", "")).strip()
@@ -3700,7 +3718,6 @@ class AgenticMemoryPlugin(Star):
                         user_id=resolved_uid,
                     )
 
-            dynamic_events = analysis.get("dynamic_events", {})
             if isinstance(dynamic_events, dict):
                 for user_name, events in dynamic_events.items():
                     if isinstance(events, str):
