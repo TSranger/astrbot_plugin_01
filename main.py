@@ -572,12 +572,12 @@ class AgenticMemoryPlugin(Star):
             解析后的 YAML 配置。
         """
         if not path.exists():
-            logger.error(f"Config file is missing: {path}")
+            logger.error(f"配置文件不存在：{path}")
             return {}
         with path.open("r", encoding="utf-8") as file:
             loaded = yaml.safe_load(file) or {}
         if not isinstance(loaded, dict):
-            logger.error("Config file root must be a mapping.")
+            logger.error("配置文件根节点必须是映射对象（字典）。")
             return {}
         return loaded
 
@@ -596,7 +596,7 @@ class AgenticMemoryPlugin(Star):
         if not skill_file.is_absolute():
             skill_file = self.plugin_dir / skill_path
         if not skill_file.exists():
-            self._log("warning", f"Skill file was not found: {skill_file}")
+            self._log("warning", f"未找到 skill 文件：{skill_file}")
             return "You are a natural, casual group member."
         return skill_file.read_text(encoding="utf-8")
 
@@ -626,8 +626,8 @@ class AgenticMemoryPlugin(Star):
 
         self._log(
             "warning",
-            "[agentic_memory] Invalid HH:MM config value, fallback to default. "
-            f"value={normalized!r}, default={default_hour:02d}:{default_minute:02d}",
+            "[agentic_memory] 时间配置格式不正确，已回退到默认值。"
+            f" 值={normalized!r}，默认值={default_hour:02d}:{default_minute:02d}",
         )
         return default_hour, default_minute
 
@@ -921,7 +921,7 @@ class AgenticMemoryPlugin(Star):
         if not bot_id:
             self._log(
                 "warning",
-                "[agentic_memory] Missing bot self id when checking mention.",
+                "[agentic_memory] 检查 @ 提及时缺少机器人自身 ID。",
             )
             return False
 
@@ -957,7 +957,7 @@ class AgenticMemoryPlugin(Star):
                 ):
                     return True
         except Exception as exc:
-            self._log("debug", f"Failed to inspect message chain mentions: {exc}")
+            self._log("debug", f"检查消息链 @ 提及失败：{exc}")
 
         raw_candidates = [
             str(getattr(event, "message_str", "")).strip(),
@@ -1024,7 +1024,7 @@ class AgenticMemoryPlugin(Star):
                     except Exception:
                         pass
         except Exception as exc:
-            self._log("debug", f"Failed to inspect message chain quotes: {exc}")
+            self._log("debug", f"检查消息链引用失败：{exc}")
 
         raw_message = str(
             getattr(getattr(event, "message_obj", None), "raw_message", "")
@@ -1836,7 +1836,7 @@ class AgenticMemoryPlugin(Star):
         if channel not in ("repeat",) and self.output_silenced_groups.get(group_id):
             self._log(
                 "info",
-                f"[agentic_memory] Reply blocked by output silence. group={group_id}, channel={channel}",
+                f"[agentic_memory] 回复已被输出静默拦截。群号={group_id}，渠道={channel}",
             )
             return False
 
@@ -1847,8 +1847,8 @@ class AgenticMemoryPlugin(Star):
             if not raw_reply_text:
                 self._log(
                     "info",
-                    "[agentic_memory] Skip sending because reply generator returned empty text. "
-                    f"group={group_id}, channel={channel}",
+                    "[agentic_memory] 回复生成器返回空文本，已跳过发送。"
+                    f" 群号={group_id}，渠道={channel}",
                 )
                 return False
 
@@ -1859,27 +1859,27 @@ class AgenticMemoryPlugin(Star):
             if parsed_payload:
                 self._log(
                     "info",
-                    "[agentic_memory] Skip sending because reply JSON had no usable text field after sanitize. "
-                    f"group={group_id}, channel={channel}, keys={list(parsed_payload.keys())}",
+                    "[agentic_memory] 回复 JSON 清洗后没有可用文本字段，已跳过发送。"
+                    f" 群号={group_id}，渠道={channel}，字段={list(parsed_payload.keys())}",
                 )
             else:
                 self._log(
                     "warning",
-                    "[agentic_memory] Empty reply after sanitize. "
-                    f"group={group_id}, channel={channel}, raw={raw_reply_text[:200]!r}",
+                    "[agentic_memory] 回复清洗后仍为空，已跳过发送。"
+                    f" 群号={group_id}，渠道={channel}，原始内容={raw_reply_text[:200]!r}",
                 )
             return False
         if self._is_duplicate_reply(group_id, reply_text, channel):
             self._log(
-                "info", f"Skipped duplicated reply in group {group_id}: {reply_text}"
+                "info", f"[agentic_memory] 已跳过重复回复。群号={group_id}，内容={reply_text}"
             )
             return False
 
         if channel != "immediate" and self._is_density_blocked(group_id):
             self._log(
                 "info",
-                "[agentic_memory] Reply blocked by message density throttle. "
-                f"group={group_id}, channel={channel}",
+                "[agentic_memory] 回复被消息密度阈值拦截。"
+                f" 群号={group_id}，渠道={channel}",
             )
             return False
 
@@ -1899,8 +1899,8 @@ class AgenticMemoryPlugin(Star):
                         if not session:
                             self._log(
                                 "warning",
-                                "[agentic_memory] Skip sending because no cached session is available for this group. "
-                                f"group={group_id}, channel={channel}",
+                                "[agentic_memory] 由于当前群没有缓存会话，已跳过直接发送。"
+                                f" 群号={group_id}，渠道={channel}",
                             )
                             return False
                         await StarTools.send_message(
@@ -1911,8 +1911,8 @@ class AgenticMemoryPlugin(Star):
                         if event is None:
                             self._log(
                                 "warning",
-                                "[agentic_memory] Skip sending because no event context was provided for event-bound send. "
-                                f"group={group_id}, channel={channel}",
+                                "[agentic_memory] 当前发送方式需要事件上下文，但未提供，已跳过发送。"
+                                f" 群号={group_id}，渠道={channel}",
                             )
                             return False
                         await event.send(event.plain_result(segment_text))
@@ -1921,14 +1921,14 @@ class AgenticMemoryPlugin(Star):
                     if attempt == 0:
                         self._log(
                             "warning",
-                            "[agentic_memory] Send attempt failed, retrying once. "
-                            f"group={group_id}, channel={channel}, error={exc}, segment={segment_text[:120]!r}",
+                            "[agentic_memory] 发送失败，正在重试一次。"
+                            f" 群号={group_id}，渠道={channel}，错误={exc}，分段={segment_text[:120]!r}",
                         )
                         await asyncio.sleep(0.8)
                         continue
                     self._log(
                         "error",
-                        f"[agentic_memory] Failed to send reply. group={group_id}, channel={channel}, error={exc}",
+                        f"[agentic_memory] 回复发送失败。群号={group_id}，渠道={channel}，错误={exc}",
                     )
                     return False
 
@@ -1951,7 +1951,7 @@ class AgenticMemoryPlugin(Star):
             self._mark_cooldown(group_id, cooldown_key)
         self._log(
             "info",
-            f"[{channel}] Sent reply in group {group_id}: {reply_text[:200]}",
+            f"[{channel}] 已发送回复。群号={group_id}，内容={reply_text[:200]}",
         )
         return sent_any
 
@@ -2495,13 +2495,13 @@ class AgenticMemoryPlugin(Star):
 
     async def _cron_proactive_talk(self) -> None:
         """后台循环调度主动发言任务。"""
-        self._log("info", "[agentic_memory] Proactive talk scheduler started.")
+        self._log("info", "[agentic_memory] 主动发言调度器已启动。")
         while True:
             try:
                 await self._run_due_proactive_tasks()
             except Exception as exc:
                 self._log(
-                    "error", f"[agentic_memory] Proactive talk scheduler failed: {exc}"
+                    "error", f"[agentic_memory] 主动发言调度器运行失败：{exc}"
                 )
             await asyncio.sleep(5)
 
@@ -2665,7 +2665,7 @@ class AgenticMemoryPlugin(Star):
         if not self.news_selfie_pipeline:
             return
 
-        self._log("debug", "[agentic_memory] News selfie scheduler started.")
+        self._log("debug", "[news_selfie] 新闻自拍调度器已启动。")
 
         _first_run_done = False
 
@@ -2732,19 +2732,47 @@ class AgenticMemoryPlugin(Star):
                 if abs((now - planned).total_seconds()) > 90:
                     continue
 
+                persisted_state = self.db.get_news_selfie_task_state(task_id)
+                if persisted_state.get("last_run_date") == today_text:
+                    self._log(
+                        "info",
+                        f"[news_selfie] Task {task_id} already processed today, skip duplicate run. last_status={persisted_state.get('last_status', '')}, last_run_time={persisted_state.get('last_run_time', '')}",
+                    )
+                    self.news_selfie_task_last_run_dates[task_id] = today_text
+                    self.news_selfie_task_planned_times.pop(task_id, None)
+                    continue
+
                 self._log(
                     "debug",
-                    f"[news_selfie] Triggering task {task_id} at {now.isoformat(timespec='seconds')}",
+                    f"[news_selfie] Triggering task {task_id} at {now.isoformat(timespec='seconds')} planned={planned.isoformat(timespec='seconds')}",
+                )
+                self.db.upsert_news_selfie_task_state(
+                    task_id,
+                    today_text,
+                    now.isoformat(timespec="seconds"),
+                    "running",
                 )
                 try:
                     results = await self.news_selfie_pipeline.run()
                 except Exception as exc:
-                    self._log("error", f"[news_selfie] Pipeline failed: {exc}")
+                    self._log("error", f"[news_selfie] 新闻自拍管道执行失败：{exc}")
                     self.news_selfie_task_last_run_dates[task_id] = today_text
+                    self.db.upsert_news_selfie_task_state(
+                        task_id,
+                        today_text,
+                        datetime.now().isoformat(timespec="seconds"),
+                        "failed",
+                    )
                     continue
 
                 self.news_selfie_task_last_run_dates[task_id] = today_text
                 self.news_selfie_task_planned_times.pop(task_id, None)
+                self.db.upsert_news_selfie_task_state(
+                    task_id,
+                    today_text,
+                    datetime.now().isoformat(timespec="seconds"),
+                    "completed",
+                )
 
                 if not results:
                     self._log(
@@ -2773,7 +2801,7 @@ class AgenticMemoryPlugin(Star):
                 if not _first_run_done and not self.group_sessions:
                     self._log(
                         "warning",
-                        "[news_selfie] group_sessions is empty at startup; news selfie send will skip groups without cached sessions.",
+                        "[news_selfie] 启动时尚未缓存任何群会话，新闻自拍会跳过没有缓存会话的群。",
                     )
                 _first_run_done = True
 
@@ -2786,7 +2814,7 @@ class AgenticMemoryPlugin(Star):
                         if not session:
                             self._log(
                                 "warning",
-                                f"[news_selfie] No cached session for group {group_id}, skipping send.",
+                                f"[news_selfie] 群号 {group_id} 没有缓存会话，已跳过发送。",
                             )
                             continue
 
@@ -2813,12 +2841,12 @@ class AgenticMemoryPlugin(Star):
                             await StarTools.send_message(session, chain)
                             self._log(
                                 "info",
-                                f"[news_selfie] Sent selfie to group {group_id}: {text[:80]}",
+                                f"[news_selfie] 已向群号 {group_id} 发送新闻自拍：{text[:80]}",
                             )
                     except Exception as exc:
                         self._log(
                             "error",
-                            f"[news_selfie] Failed to send to group {group_id}: {exc}",
+                            f"[news_selfie] 向群号 {group_id} 发送失败：{exc}",
                         )
 
     def _format_db_time(self, value: str | None) -> str:
@@ -3668,6 +3696,9 @@ class AgenticMemoryPlugin(Star):
             knowledge_confidence = max(0.0, min(1.0, knowledge_confidence))
             interject_topic = str(llm_result.get("interject_topic", "")).strip()
             used_fallback_topic = False
+            topic_confidence_score = knowledge_confidence * (
+                1.5 if matches_preference else 1.0
+            )
 
             if not interject_topic:
                 last_non_empty_message = ""
@@ -3690,11 +3721,12 @@ class AgenticMemoryPlugin(Star):
 
             self._log(
                 "info",
-                "[agentic_memory] Proactive analysis summary. "
-                f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
-                f"matches_preference={matches_preference}, topic_ready={bool(interject_topic)}, "
-                f"used_fallback_topic={used_fallback_topic}, summary={summary_text[:120]!r}, "
-                f"knowledge_confidence={knowledge_confidence:.2f}, topic={interject_topic[:120]!r}",
+                "[agentic_memory] 主动发言分析总日志 | "
+                f"群号={group_id} | 消息数={len(chat_batch)} | 主题摘要={summary_text[:120]!r} | "
+                f"LLM把握度={knowledge_confidence:.2f} | 话题匹配度分={topic_confidence_score:.2f} | "
+                f"重要话题={is_significant} | 偏好匹配={matches_preference} | "
+                f"话题已准备={bool(interject_topic)} | 使用兜底话题={used_fallback_topic} | "
+                f"当前切入点={interject_topic[:120]!r}",
             )
 
             if summary_text:
@@ -3725,12 +3757,9 @@ class AgenticMemoryPlugin(Star):
 
             self._log(
                 "info",
-                "[agentic_memory] Proactive analysis payload. "
-                f"group={group_id}, summary={summary_text[:120]!r}, "
-                f"is_significant={is_significant}, matches_preference={matches_preference}, "
-                f"knowledge_confidence={knowledge_confidence:.2f}, "
-                f"interject_topic={interject_topic[:120]!r}, "
-                f"profile_update_groups={profile_update_count}, dynamic_event_groups={dynamic_event_count}",
+                "[agentic_memory] 主动发言分析补充 | "
+                f"群号={group_id} | 用户画像更新组数={profile_update_count} | 动态事件组数={dynamic_event_count} | "
+                f"主题摘要={summary_text[:120]!r} | 切入点={interject_topic[:120]!r}",
             )
             for item in chat_batch:
                 uid = str(item.get("user_id", "")).strip()
@@ -3827,11 +3856,12 @@ class AgenticMemoryPlugin(Star):
 
             self._log(
                 "info",
-                "[agentic_memory] Proactive decision. "
-                f"group={group_id}, batch_size={len(chat_batch)}, significant={is_significant}, "
-                f"matches_preference={matches_preference}, knowledge_confidence={knowledge_confidence:.2f}, probability={probability:.4f}, "
-                f"random_draw={(f'{random_draw:.4f}' if random_draw is not None else 'significant_auto_pass')}, "
-                f"topic_ready={bool(interject_topic)}, should_speak={should_speak}",
+                "[agentic_memory] 主动发言决策总日志 | "
+                f"群号={group_id} | 消息数={len(chat_batch)} | 主题摘要={summary_text[:120]!r} | "
+                f"LLM把握度={knowledge_confidence:.2f} | 话题匹配度分={topic_confidence_score:.2f} | "
+                f"重要话题={is_significant} | 偏好匹配={matches_preference} | "
+                f"触发概率={probability:.4f} | 随机抽样={(f'{random_draw:.4f}' if random_draw is not None else '重要话题直接通过')} | "
+                f"有切入点={bool(interject_topic)} | 最终发言={should_speak}",
             )
 
             if not interject_topic:

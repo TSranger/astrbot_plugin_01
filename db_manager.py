@@ -130,6 +130,17 @@ class MemoryDBManager:
                 )
                 """
             )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS News_Selfie_Task_State (
+                    task_id TEXT PRIMARY KEY,
+                    last_run_date TEXT NOT NULL,
+                    last_run_time TEXT DEFAULT NULL,
+                    last_status TEXT DEFAULT ''
+                )
+                """
+            )
             conn.commit()
             logger.info(f"SQLite database initialized: {self.db_path}")
 
@@ -767,6 +778,60 @@ class MemoryDBManager:
                     last_send_time = excluded.last_send_time
                 """,
                 (group_id, task_id, last_run_date, last_send_time),
+            )
+            conn.commit()
+
+    def get_news_selfie_task_state(self, task_id: str) -> dict[str, str]:
+        """获取新闻自拍任务的最近执行状态。
+
+        Args:
+            task_id: 任务 ID。
+
+        Returns:
+            包含 ``last_run_date``、``last_run_time`` 和 ``last_status`` 的字典。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT last_run_date, last_run_time, last_status FROM News_Selfie_Task_State WHERE task_id = ?",
+                (task_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "last_run_date": str(row[0] or ""),
+                    "last_run_time": str(row[1] or ""),
+                    "last_status": str(row[2] or ""),
+                }
+            return {"last_run_date": "", "last_run_time": "", "last_status": ""}
+
+    def upsert_news_selfie_task_state(
+        self,
+        task_id: str,
+        last_run_date: str,
+        last_run_time: str | None = None,
+        last_status: str = "",
+    ) -> None:
+        """写入新闻自拍任务的最近执行状态。
+
+        Args:
+            task_id: 任务 ID。
+            last_run_date: 最近执行日期，格式为 ``YYYY-MM-DD``。
+            last_run_time: 最近执行时间文本。
+            last_status: 最近执行结果状态。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO News_Selfie_Task_State (task_id, last_run_date, last_run_time, last_status)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    last_run_date = excluded.last_run_date,
+                    last_run_time = excluded.last_run_time,
+                    last_status = excluded.last_status
+                """,
+                (task_id, last_run_date, last_run_time, last_status),
             )
             conn.commit()
 

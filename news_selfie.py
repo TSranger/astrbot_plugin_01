@@ -214,7 +214,7 @@ class NewsFetcher:
     ) -> list[dict[str, Any]]:
         url = self._GOOGLE_RSS_URLS.get(self.country, self._GOOGLE_RSS_URLS["cn"])
         logger.info(
-            f"[news_selfie] Fetching headlines from Google News RSS: {url[:80]}..."
+            f"[新闻自拍] 正在从 Google 新闻源获取标题：{url[:80]}..."
         )
 
         headers = {
@@ -244,7 +244,7 @@ class NewsFetcher:
         try:
             root = ElementTree.fromstring(xml_data)
         except ElementTree.ParseError as exc:
-            logger.warning(f"[news_selfie] Failed to parse RSS XML: {exc}")
+            logger.warning(f"[新闻自拍] 解析 RSS 新闻源失败：{exc}")
             return []
 
         items = root.findall(".//item")
@@ -273,7 +273,7 @@ class NewsFetcher:
                 }
             )
 
-        logger.info(f"[news_selfie] Fetched {len(headlines)} headlines from RSS")
+        logger.info(f"[新闻自拍] 已从 RSS 新闻源获取 {len(headlines)} 条新闻标题。")
         return headlines
 
     async def _fetch_newsapi(
@@ -287,7 +287,7 @@ class NewsFetcher:
         }
 
         logger.info(
-            f"[news_selfie] Fetching headlines from NewsAPI: country={self.country}"
+            f"[新闻自拍] 正在从新闻接口获取新闻标题，国家/地区={self.country}"
         )
 
         should_close = session is None
@@ -303,9 +303,9 @@ class NewsFetcher:
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.warning(
-                        f"[news_selfie] NewsAPI returned {resp.status}: {error_text[:200]}"
+                        f"[新闻自拍] 新闻接口返回异常状态 {resp.status}：{error_text[:200]}"
                     )
-                    logger.info("[news_selfie] Falling back to Google News RSS")
+                    logger.info("[新闻自拍] 已回退到 Google 新闻源。")
                     return await self._fetch_google_rss(session)
                 data = await resp.json()
         finally:
@@ -331,7 +331,7 @@ class NewsFetcher:
                 }
             )
 
-        logger.info(f"[news_selfie] Fetched {len(headlines)} headlines from NewsAPI")
+        logger.info(f"[新闻自拍] 已从新闻接口获取 {len(headlines)} 条新闻标题。")
         return headlines
 
     @staticmethod
@@ -362,8 +362,7 @@ class NewsEvaluator:
             results.extend(batch_results)
 
         logger.info(
-            f"[news_selfie] Evaluation found {len(results)} big news "
-            f"out of {len(headlines)}"
+            f"[新闻自拍] 新闻评估汇总：共 {len(headlines)} 条候选，识别出 {len(results)} 条重大新闻。"
         )
         return results
 
@@ -412,7 +411,7 @@ class NewsEvaluator:
                 system_prompt=system_prompt,
             )
         except Exception as exc:
-            logger.error(f"[news_selfie] News evaluation LLM call failed: {exc}")
+            logger.error(f"[新闻自拍] 新闻评估大模型调用失败：{exc}")
             return []
 
         return self._parse_evaluation(response, headlines)
@@ -432,13 +431,11 @@ class NewsEvaluator:
                     evaluations = json.loads(match.group())
                 except json.JSONDecodeError:
                     logger.warning(
-                        f"[news_selfie] Failed to parse evaluation: {response[:300]}"
+                        f"[新闻自拍] 解析新闻评估结果失败：{response[:300]}"
                     )
                     return []
             else:
-                logger.warning(
-                    f"[news_selfie] No JSON found in evaluation: {response[:300]}"
-                )
+                logger.warning(f"[新闻自拍] 新闻评估结果中未找到 JSON：{response[:300]}")
                 return []
 
         if isinstance(evaluations, dict):
@@ -477,7 +474,7 @@ class NewsEvaluator:
             )
 
         logger.info(
-            f"[news_selfie] Evaluation found {len(big_news)} big news out of {len(headlines)}"
+            f"[新闻自拍] 新闻评估完成：候选 {len(headlines)} 条，识别出重大新闻 {len(big_news)} 条。"
         )
         return big_news
 
@@ -494,7 +491,7 @@ class ArticleFetcher:
         self, url: str, session: aiohttp.ClientSession | None = None
     ) -> dict[str, Any]:
         if not _is_url_safe(url):
-            logger.warning(f"[news_selfie] Blocked unsafe article URL: {url[:120]}")
+            logger.warning(f"[新闻自拍] 已拦截不安全的文章链接：{url[:120]}")
             return {"content": "", "image_url": "", "error": "unsafe_url"}
 
         headers = {
@@ -529,7 +526,7 @@ class ArticleFetcher:
 
         if exc_info is not None:
             logger.warning(
-                f"[news_selfie] Failed to fetch article {url[:80]}: {exc_info}"
+                f"[news_selfie] 抓取文章失败：{url[:80]}，错误：{exc_info}"
             )
             return {"content": "", "image_url": "", "error": str(exc_info)}
 
@@ -609,19 +606,19 @@ class ArticleFetcher:
                     (".jpg", ".jpeg", ".png", ".webp")
                 ):
                     logger.warning(
-                        f"[news_selfie] Not an image: {url[:80]} (Content-Type: {content_type})"
+                        f"[news_selfie] 不是图片内容：{url[:80]}（Content-Type：{content_type}）"
                     )
                     return None
                 data = await resp.read()
         except Exception as exc:
-            logger.warning(f"[news_selfie] Failed to download image {url[:80]}: {exc}")
+            logger.warning(f"[新闻自拍] 下载图片失败：{url[:80]}，错误：{exc}")
             return None
         finally:
             if should_close and session is not None:
                 await session.close()
 
         file_path.write_bytes(data)
-        logger.info(f"[news_selfie] Downloaded image: {file_path}")
+        logger.info(f"[新闻自拍] 已下载图片：{file_path}")
         return file_path
 
 
@@ -690,7 +687,7 @@ class SelfieTextGenerator:
                 system_prompt=system_prompt,
             )
         except Exception as exc:
-            logger.error(f"[news_selfie] Selfie text generation failed: {exc}")
+            logger.error(f"[新闻自拍] 自拍文案生成失败：{exc}")
             return f"刚看到一条新闻：{title}"
 
         text = response.strip()
@@ -770,7 +767,7 @@ class SelfieImageGenerator:
     ) -> Path | None:
         if not self.api_key:
             logger.error(
-                f"[news_selfie] Image API key not configured (provider={self.provider})"
+                f"[新闻自拍] 未配置图片生成接口密钥（提供方={self.provider}）。"
             )
             return None
 
@@ -779,9 +776,9 @@ class SelfieImageGenerator:
 
         if self.provider == "mimo":
             logger.error(
-                "[news_selfie] MiMo does NOT support image generation. "
-                "mimo-v2-omni is a text+vision understanding model only. "
-                "Please switch image_gen_provider to 'dalle', 'openai_images', or 'tongyi'."
+                "[新闻自拍] MiMo 不支持图片生成。"
+                "mimo-v2-omni 只是文本加视觉理解模型。"
+                "请将图片生成提供方切换为 'dalle'、'openai_images' 或 'tongyi'。"
             )
             return None
         elif self.provider == "tongyi":
@@ -789,8 +786,7 @@ class SelfieImageGenerator:
         else:
             if ref_images_base64:
                 logger.info(
-                    "[news_selfie] Reference images found but current provider "
-                    "does not support them — using text-only prompt."
+                    "[新闻自拍] 找到了参考图片，但当前提供方不支持直接传图，已改用纯文本提示词。"
                 )
             return await self._call_dalle_api(prompt, session)
 
@@ -811,7 +807,7 @@ class SelfieImageGenerator:
         try:
             from PIL import Image, ImageOps
         except Exception as exc:
-            logger.error(f"[news_selfie] PIL unavailable for cover composition: {exc}")
+            logger.error(f"[新闻自拍] 当前环境缺少图片处理库，无法合成封面图：{exc}")
             return None
 
         bot_source = appearance.reference_gif or (appearance.reference_images[0] if appearance.reference_images else None)
@@ -847,10 +843,10 @@ class SelfieImageGenerator:
 
             out_path = self.output_dir / f"selfie_card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             composed.save(out_path)
-            logger.info(f"[news_selfie] Saved composed cover card: {out_path}")
+            logger.info(f"[新闻自拍] 已保存合成封面图：{out_path}")
             return out_path
         except Exception as exc:
-            logger.warning(f"[news_selfie] Failed to compose cover card: {exc}")
+            logger.warning(f"[新闻自拍] 合成封面图失败：{exc}")
             return None
 
     def _build_prompt(
@@ -887,7 +883,7 @@ class SelfieImageGenerator:
         )
         prompt = "，".join(parts)
         logger.info(
-            f"[news_selfie] Image prompt (provider={self.provider}): {prompt[:200]}"
+            f"[新闻自拍] 图片生成提示词（提供方={self.provider}）：{prompt[:200]}"
         )
         return prompt
 
@@ -907,10 +903,10 @@ class SelfieImageGenerator:
                 b64 = base64.b64encode(data).decode("ascii")
                 images.append(f"data:image/gif;base64,{b64}")
                 logger.info(
-                    f"[news_selfie] Encoded reference GIF: {appearance.reference_gif}"
+                    f"[新闻自拍] 已编码参考动画图：{appearance.reference_gif}"
                 )
             except Exception as exc:
-                logger.warning(f"[news_selfie] Failed to encode reference GIF: {exc}")
+                logger.warning(f"[新闻自拍] 编码参考动画图失败：{exc}")
 
         for img_path in appearance.reference_images:
             try:
@@ -924,10 +920,10 @@ class SelfieImageGenerator:
                 }.get(suffix, "image/png")
                 b64 = base64.b64encode(data).decode("ascii")
                 images.append(f"data:{mime_type};base64,{b64}")
-                logger.info(f"[news_selfie] Encoded reference image: {img_path}")
+                logger.info(f"[新闻自拍] 已编码参考图片：{img_path}")
             except Exception as exc:
                 logger.warning(
-                    f"[news_selfie] Failed to encode reference image {img_path}: {exc}"
+                    f"[新闻自拍] 编码参考图片失败：{img_path}，错误：{exc}"
                 )
 
         return images
@@ -964,7 +960,7 @@ class SelfieImageGenerator:
                 resp_data = await resp.json()
                 if resp.status != 200:
                     logger.error(
-                        f"[news_selfie] DALL-E API error {resp.status}: "
+                        f"[新闻自拍] 图片生成接口返回错误 {resp.status}："
                         f"{json.dumps(resp_data, ensure_ascii=False)[:500]}"
                     )
                     return None
@@ -981,10 +977,10 @@ class SelfieImageGenerator:
                 if result_path:
                     return result_path
 
-            logger.error("[news_selfie] DALL-E response has no image URL or base64")
+            logger.error("[新闻自拍] 图片生成接口响应中没有图片地址或编码数据。")
             return None
         except Exception as exc:
-            logger.error(f"[news_selfie] DALL-E API call failed: {exc}")
+            logger.error(f"[新闻自拍] 图片生成接口调用失败：{exc}")
             return None
         finally:
             if should_close and session is not None:
@@ -1091,7 +1087,7 @@ class SelfieImageGenerator:
                 resp_data = await resp.json()
                 if resp.status != 200:
                     logger.error(
-                        f"[news_selfie] Tongyi API error {resp.status}: "
+                        f"[新闻自拍] 通义图片生成接口错误 {resp.status}："
                         f"{json.dumps(resp_data, ensure_ascii=False)[:500]}"
                     )
                     return None
@@ -1100,7 +1096,7 @@ class SelfieImageGenerator:
             task_id = output.get("task_id", "")
             if not task_id:
                 logger.error(
-                    f"[news_selfie] Tongyi response missing task_id: "
+                    f"[新闻自拍] 通义图片生成响应缺少任务编号："
                     f"{json.dumps(resp_data, ensure_ascii=False)[:300]}"
                 )
                 return None
@@ -1131,12 +1127,12 @@ class SelfieImageGenerator:
                     return result_path
 
             logger.error(
-                "[news_selfie] Tongyi response has no image: "
+                "[新闻自拍] 通义图片生成响应中没有图片内容："
                 f"{json.dumps(resp_data, ensure_ascii=False)[:500]}"
             )
             return None
         except Exception as exc:
-            logger.error(f"[news_selfie] Tongyi API call failed: {exc}")
+            logger.error(f"[新闻自拍] 通义图片生成接口调用失败：{exc}")
             return None
         finally:
             if should_close and session is not None:
@@ -1160,7 +1156,7 @@ class SelfieImageGenerator:
                     resp_data = await resp.json()
             except Exception as exc:
                 logger.warning(
-                    f"[news_selfie] Tongyi poll attempt {attempt} failed: {exc}"
+                    f"[新闻自拍] 通义任务轮询第 {attempt} 次失败：{exc}"
                 )
                 continue
 
@@ -1170,13 +1166,13 @@ class SelfieImageGenerator:
                 if image_url:
                     return await self._download_generated_image(image_url, session)
                 logger.error(
-                    "[news_selfie] Tongyi task SUCCEEDED but no image URL found: "
+                    "[新闻自拍] 通义任务已成功但未找到图片地址："
                     f"{json.dumps(resp_data, ensure_ascii=False)[:300]}"
                 )
                 return None
             elif task_status == "FAILED":
                 logger.error(
-                    f"[news_selfie] Tongyi task {task_id} failed: "
+                    f"[新闻自拍] 通义任务 {task_id} 失败："
                     f"{json.dumps(resp_data, ensure_ascii=False)[:300]}"
                 )
                 return None
@@ -1188,10 +1184,10 @@ class SelfieImageGenerator:
         file_path = self.output_dir / f"selfie_{timestamp}.png"
         try:
             file_path.write_bytes(base64.b64decode(b64_data))
-            logger.info(f"[news_selfie] Saved base64 selfie: {file_path}")
+            logger.info(f"[新闻自拍] 已保存 base64 新闻自拍图：{file_path}")
             return file_path
         except Exception as exc:
-            logger.error(f"[news_selfie] Failed to save base64 image: {exc}")
+            logger.error(f"[新闻自拍] 保存 base64 图片失败：{exc}")
             return None
 
     async def _download_generated_image(
@@ -1216,7 +1212,7 @@ class SelfieImageGenerator:
                 resp.raise_for_status()
                 data = await resp.read()
         except Exception as exc:
-            logger.error(f"[news_selfie] Failed to download generated image: {exc}")
+            logger.error(f"[新闻自拍] 下载生成图片失败：{exc}")
         finally:
             if should_close and session is not None:
                 await session.close()
@@ -1225,7 +1221,7 @@ class SelfieImageGenerator:
             return None
 
         file_path.write_bytes(data)
-        logger.info(f"[news_selfie] Saved generated selfie: {file_path}")
+        logger.info(f"[新闻自拍] 已保存生成的新闻自拍图：{file_path}")
         return file_path
 
 
@@ -1286,27 +1282,26 @@ class NewsSelfiePipeline:
             except Exception as exc:
                 if attempt <= self._MAX_RETRIES:
                     logger.warning(
-                        f"[news_selfie] {step_name} attempt {attempt} failed: {exc}. "
-                        f"Retrying in {self._RETRY_DELAY_SECONDS}s..."
+                        f"[news_selfie] {step_name} 第 {attempt} 次失败：{exc}，"
+                        f"将在 {self._RETRY_DELAY_SECONDS} 秒后重试。"
                     )
                     await asyncio.sleep(self._RETRY_DELAY_SECONDS)
                 else:
                     logger.error(
-                        f"[news_selfie] {step_name} failed after {attempt} attempts: {exc}"
+                        f"[news_selfie] {step_name} 连续重试 {attempt} 次后仍然失败：{exc}"
                     )
                 continue
 
             if is_success is not None and not is_success(result):
                 if attempt <= self._MAX_RETRIES:
                     logger.warning(
-                        f"[news_selfie] {step_name} attempt {attempt} returned "
-                        f"empty/invalid result. Retrying in {self._RETRY_DELAY_SECONDS}s..."
+                        f"[news_selfie] {step_name} 第 {attempt} 次返回空结果或无效结果，"
+                        f"将在 {self._RETRY_DELAY_SECONDS} 秒后重试。"
                     )
                     await asyncio.sleep(self._RETRY_DELAY_SECONDS)
                 else:
                     logger.error(
-                        f"[news_selfie] {step_name} returned empty/invalid result "
-                        f"after {attempt} attempts"
+                        f"[news_selfie] {step_name} 已重试 {attempt} 次，仍返回空结果或无效结果。"
                     )
                 continue
 
@@ -1349,12 +1344,12 @@ class NewsSelfiePipeline:
         self._save_cache()
 
     async def run(self) -> list[dict[str, Any]]:
-        logger.info("[news_selfie] Pipeline started")
+        logger.info("[新闻自拍] 新闻自拍管道已启动。")
 
         async with aiohttp.ClientSession() as session:
             headlines = await self.fetcher.fetch_headlines(session)
             if not headlines:
-                logger.info("[news_selfie] No headlines fetched, exiting")
+                logger.info("[新闻自拍] 未获取到新闻标题，流程结束。")
                 return []
 
             big_news_list = await self._retry(
@@ -1363,20 +1358,20 @@ class NewsSelfiePipeline:
                 is_success=lambda r: isinstance(r, list) and len(r) > 0,
             )
             if not big_news_list:
-                logger.info("[news_selfie] No big news found, exiting")
+                logger.info("[新闻自拍] 未找到值得发送的重大新闻，流程结束。")
                 return []
 
             fresh_news = [
                 n for n in big_news_list if not self._is_duplicate(n["title"])
             ]
             if not fresh_news:
-                logger.info("[news_selfie] All big news already sent, exiting")
+                logger.info("[新闻自拍] 可发送的重大新闻都已发过，流程结束。")
                 return []
 
             count = min(self.max_selfies_per_run, len(fresh_news))
             selected_list = random.sample(fresh_news, count)
             logger.info(
-                f"[news_selfie] Selected {count} news items out of {len(fresh_news)}"
+                f"[news_selfie] 本轮从 {len(fresh_news)} 条新新闻中选出 {count} 条进行处理。"
             )
 
             results: list[dict[str, Any]] = []
@@ -1386,15 +1381,13 @@ class NewsSelfiePipeline:
                     results.append(result)
                     self._mark_sent(selected["title"])
 
-        logger.info(
-            f"[news_selfie] Pipeline completed: {len(results)} results generated"
-        )
+        logger.info(f"[新闻自拍] 管道执行完成，共生成 {len(results)} 条结果。")
         return results
 
     async def _process_single_news(
         self, selected: dict[str, Any], session: aiohttp.ClientSession
     ) -> dict[str, Any] | None:
-        logger.info(f"[news_selfie] Processing news: {selected['title'][:80]}")
+        logger.info(f"[新闻自拍] 正在处理新闻：{selected['title'][:80]}")
 
         article = await self.article_fetcher.fetch_article(selected["url"], session)
         selected["content"] = article.get("content", "")
@@ -1415,8 +1408,8 @@ class NewsSelfiePipeline:
 
         appearance = resolve_bot_appearance(skill_dir)
         logger.info(
-            f"[news_selfie] Bot appearance: gif={appearance.reference_gif is not None}, "
-            f"images={len(appearance.reference_images)}, name={appearance.text_description[:30]}"
+            f"[news_selfie] 已解析 bot 外观：是否有 GIF={appearance.reference_gif is not None}，"
+            f"参考图片数={len(appearance.reference_images)}，角色描述={appearance.text_description[:30]}"
         )
 
         skill_content = ""
@@ -1452,11 +1445,9 @@ class NewsSelfiePipeline:
 
         if not selfie_text:
             selfie_text = f"刚看到一条新闻：{selected['title']}"
-            logger.warning(
-                "[news_selfie] Text generation returned empty, using fallback"
-            )
+            logger.warning("[新闻自拍] 文案生成结果为空，已使用兜底文案。")
 
-        logger.info(f"[news_selfie] Generated selfie text: {selfie_text[:120]}")
+        logger.info(f"[新闻自拍] 已生成新闻自拍文案：{selfie_text[:120]}")
 
         return {
             "text": selfie_text,

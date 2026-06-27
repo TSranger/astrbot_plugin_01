@@ -14,7 +14,7 @@ class PluginLLMRouter:
     """按角色路由插件 LLM 调用，不改 AstrBot 核心。
 
     路由支持两种模式：
-    1. ``astrbot_default``：全部继续走 AstrBot 当前 provider。
+    1. ``astrbot_default``：全部继续走 AstrBot 当前提供方。
     2. ``plugin_router``：按角色调用插件内配置的 OpenAI 兼容接口。
 
     Args:
@@ -62,9 +62,7 @@ class PluginLLMRouter:
                     image_urls=image_urls,
                 )
             except Exception as exc:
-                logger.error(
-                    f"[LLM Router] Plugin router failed for role={role}: {exc}"
-                )
+                logger.error(f"[LLM 路由] 角色 {role} 的插件路由调用失败：{exc}")
                 if not self.fallback_to_default:
                     raise
         return await self._call_astrbot_default(prompt, system_prompt)
@@ -85,7 +83,7 @@ class PluginLLMRouter:
         """
         provider = self.context.get_using_provider()
         if not provider:
-            raise RuntimeError("AstrBot default provider is unavailable.")
+            raise RuntimeError("AstrBot 默认提供方不可用。")
         response = await provider.text_chat(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -117,13 +115,13 @@ class PluginLLMRouter:
         """
         if role_config.get("provider_type") != "openai_compatible":
             raise ValueError(
-                f"Unsupported provider_type: {role_config.get('provider_type')}",
+                f"不支持的 provider_type：{role_config.get('provider_type')}",
             )
 
         base_url = str(role_config.get("base_url", "")).strip()
         model = str(role_config.get("model", "")).strip()
         if not base_url or not model:
-            raise ValueError("base_url and model are required in plugin_router mode.")
+            raise ValueError("在 plugin_router 模式下必须提供 base_url 和 model。")
 
         endpoint = base_url.rstrip("/")
         if not endpoint.endswith("/chat/completions"):
