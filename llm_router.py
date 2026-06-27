@@ -31,6 +31,26 @@ class PluginLLMRouter:
         )
         self.roles = self.settings.get("roles", {})
 
+    def describe_role(self, role: str) -> dict[str, Any]:
+        """返回指定角色的路由诊断信息。
+
+        Args:
+            role: 逻辑角色名。
+
+        Returns:
+            用于日志输出的简要诊断字典。
+        """
+        role_config = self.roles.get(role, {})
+        return {
+            "mode": self.mode,
+            "fallback_to_default": self.fallback_to_default,
+            "role": role,
+            "enabled": bool(role_config.get("enabled", False)),
+            "provider_type": str(role_config.get("provider_type", "")),
+            "model": str(role_config.get("model", "")),
+            "base_url": str(role_config.get("base_url", "")),
+        }
+
     async def text_chat(
         self,
         role: str,
@@ -150,6 +170,14 @@ class PluginLLMRouter:
             "top_p": role_config.get("top_p", 1.0),
             "max_tokens": role_config.get("max_tokens", 512),
         }
+
+        if image_urls:
+            logger.info(
+                f"[LLM 路由] 角色 {role} 正在发送视觉请求："
+                f"mode={self.mode}，provider_type={role_config.get('provider_type')}，"
+                f"model={model}，image_count={len(image_urls)}，"
+                f"images_are_data_uri={all(str(url).startswith('data:image/') for url in image_urls)}"
+            )
 
         headers = {
             "Content-Type": "application/json",

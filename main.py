@@ -4124,6 +4124,15 @@ class AgenticMemoryPlugin(Star):
             last_exc: Exception | None = None
             for attempt, image_input in enumerate(image_inputs, start=1):
                 try:
+                    vision_diag = self.router.describe_role("vision")
+                    self._log(
+                        "info",
+                        f"[智能记忆] 视觉请求诊断：mode={vision_diag['mode']}，fallback_to_default={vision_diag['fallback_to_default']}，"
+                        f"enabled={vision_diag['enabled']}，provider_type={vision_diag['provider_type']}，model={vision_diag['model']}，"
+                        f"base_url={vision_diag['base_url']}，尝试={attempt}/{len(image_inputs)}，"
+                        f"输入类型={'data_uri' if image_input.startswith('data:image/') else '原始地址'}，"
+                        f"图片大小={len(image_input)}",
+                    )
                     desc = await self.router.text_chat(
                         role="vision",
                         prompt=prompt,
