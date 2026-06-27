@@ -153,7 +153,7 @@ class PluginLLMRouter:
         messages.extend(context_messages)
 
         if image_urls:
-            user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+            user_content: list[dict[str, Any]] = []
             for url in image_urls:
                 user_content.append(
                     {
@@ -161,17 +161,27 @@ class PluginLLMRouter:
                         "image_url": {"url": self._normalize_image_reference(url)},
                     }
                 )
+            user_content.append({"type": "text", "text": prompt})
             messages.append({"role": "user", "content": user_content})
         else:
             messages.append({"role": "user", "content": prompt})
 
+        use_completion_tokens = any(
+            marker in f"{base_url} {model}".lower()
+            for marker in ("xiaomimimo", "mimo-")
+        )
         payload = {
             "model": model,
             "messages": messages,
             "temperature": role_config.get("temperature", 0.7),
             "top_p": role_config.get("top_p", 1.0),
-            "max_tokens": role_config.get("max_tokens", 512),
         }
+        if use_completion_tokens:
+            payload["max_completion_tokens"] = role_config.get(
+                "max_completion_tokens", role_config.get("max_tokens", 512)
+            )
+        else:
+            payload["max_tokens"] = role_config.get("max_tokens", 512)
 
         if image_urls:
             first_image = str(image_urls[0]) if image_urls else ""
