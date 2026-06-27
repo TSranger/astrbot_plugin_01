@@ -888,7 +888,11 @@ class AgenticMemoryPlugin(Star):
                 prompt=prompt,
                 system_prompt="判断一条群聊消息是否在对你（bot）说话。只回答 yes 或 no。",
             )
-        except Exception:
+        except Exception as exc:
+            self._log(
+                "warning",
+                f"[智能记忆] 跟随判定第二阶段调用失败：{exc}，群号={group_id}，发送者={sender_name}",
+            )
             return False
 
         is_followup = str(result).strip().lower().startswith("yes")
@@ -959,7 +963,11 @@ class AgenticMemoryPlugin(Star):
                 if callable(to_dict):
                     try:
                         segment_dict = to_dict()
-                    except Exception:
+                    except Exception as exc:
+                        self._log(
+                            "debug",
+                            f"[智能记忆] 解析消息链片段的 toDict 失败：{exc}，片段={repr(segment)[:200]}",
+                        )
                         segment_dict = None
                 if (
                     isinstance(segment_dict, dict)
@@ -1032,8 +1040,11 @@ class AgenticMemoryPlugin(Star):
                                 for key in ("user_id", "sender_id", "qq"):
                                     if str(data.get(key, "")).strip() == bot_id:
                                         return True
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        self._log(
+                            "debug",
+                            f"[智能记忆] 解析引用消息片段的 toDict 失败：{exc}，片段={repr(segment)[:200]}",
+                        )
         except Exception as exc:
             self._log("debug", f"[智能记忆] 检查消息链引用失败：{exc}")
 
@@ -1100,6 +1111,10 @@ class AgenticMemoryPlugin(Star):
         raw_text = str(text).strip()
         if not raw_text:
             return ""
+
+        # 纯标点或省略号式回复允许直接保留，避免被后续清洗成空文本。
+        if re.fullmatch(r"[\s\u3000]*([？?！!。．…~～·、，,;；：:]+|\.{2,}|！+|？+)[\s\u3000]*", raw_text):
+            return raw_text.strip()
 
         cleaned = raw_text
 
@@ -4036,8 +4051,11 @@ class AgenticMemoryPlugin(Star):
                         url = str(data.get("url", "") or "").strip()
                         if url:
                             return html.unescape(url)
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log(
+                    "debug",
+                    f"[智能记忆] 提取消息片段图片 URL 失败：{exc}，片段={repr(segment)[:200]}",
+                )
 
         return ""
 
@@ -4090,41 +4108,56 @@ class AgenticMemoryPlugin(Star):
                     f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 下载失败，已跳过。",
                 )
                 return ""
+
+            image_inputs: list[str] = [data_uri]
+            normalized_url = html.unescape(str(url).strip())
+            if normalized_url and normalized_url != data_uri:
+                image_inputs.append(normalized_url)
+
             prompt = (
                 f"请用中文详细描述这张图片，重点说清楚图中文字、OCR内容、人物动作、表情包梗和整体语境。"
                 f"尽量保留关键信息，不要少于{max_desc_len // 2}字，也不要超过{max_desc_len}字。"
                 "如果是表情包，优先说明字面内容和情绪。"
+                "如果第一次回答为空，请不要直接沉默，至少描述你能看见的内容。"
                 f"{f'上下文：{context_hint}' if context_hint else ''}"
             )
-            try:
-                desc = await self.router.text_chat(
-                    role="vision",
-                    prompt=prompt,
-                    system_prompt="You describe images concisely in Chinese.",
-                    image_urls=[data_uri],
-                )
-                elapsed = (datetime.now() - start_time).total_seconds()
-                desc = self._sanitize_reply_text(desc)
-                if desc:
+            last_exc: Exception | None = None
+            for attempt, image_input in enumerate(image_inputs, start=1):
+                try:
+                    desc = await self.router.text_chat(
+                        role="vision",
+                        prompt=prompt,
+                        system_prompt="You describe images concisely in Chinese.",
+                        image_urls=[image_input],
+                    )
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    desc = self._sanitize_reply_text(desc)
+                    if desc:
+                        self._log(
+                            "info",
+                            f"[智能记忆] 图片 [{idx + 1}/{max_count}] 已完成，耗时 {elapsed:.1f} 秒，"
+                            f"尝试={attempt}/{len(image_inputs)}，输入类型={'data_uri' if image_input.startswith('data:image/') else '原始地址'}，描述={desc[:80]}",
+                        )
+                        descriptions.append(desc)
+                        return desc
+
                     self._log(
                         "info",
-                        f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 已完成，耗时 {elapsed:.1f} 秒，"
-                        f"描述={desc[:80]}",
+                        f"[智能记忆] 图片 [{idx + 1}/{max_count}] 视觉模型返回空结果，耗时 {elapsed:.1f} 秒，"
+                        f"尝试={attempt}/{len(image_inputs)}，输入类型={'data_uri' if image_input.startswith('data:image/') else '原始地址'}。",
                     )
-                    descriptions.append(desc)
-                else:
+                except Exception as exc:
+                    last_exc = exc
+                    elapsed = (datetime.now() - start_time).total_seconds()
                     self._log(
-                        "info",
-                        f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 视觉模型返回空结果，耗时 {elapsed:.1f} 秒。",
+                        "warning",
+                        f"[智能记忆] 图片 [{idx + 1}/{max_count}] 视觉模型调用失败，耗时 {elapsed:.1f} 秒，"
+                        f"尝试={attempt}/{len(image_inputs)}，输入类型={'data_uri' if image_input.startswith('data:image/') else '原始地址'}，错误：{exc}",
                     )
-                return desc
-            except Exception as exc:
-                elapsed = (datetime.now() - start_time).total_seconds()
-                self._log(
-                    "info",
-                    f"[agentic_memory] 图片 [{idx + 1}/{max_count}] 视觉模型调用失败，耗时 {elapsed:.1f} 秒，错误：{exc}",
-                )
+
+            if last_exc is not None:
                 return ""
+            return ""
 
         await asyncio.gather(
             *(
@@ -4235,8 +4268,11 @@ class AgenticMemoryPlugin(Star):
                 img.save(buffer, format="JPEG", quality=80)
                 data = buffer.getvalue()
                 compressed = True
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log(
+                    "warning",
+                    f"[智能记忆] 图片转 JPEG 压缩失败，已保留原始数据：{exc}",
+                )
 
         if compressed:
             mime = "image/jpeg"
@@ -4403,7 +4439,7 @@ class AgenticMemoryPlugin(Star):
                 ):
                     self._log(
                         "info",
-                        f"[agentic_memory] Repeat detected. group={group_id}, text={current_text[:80]}, count={tracker['count']}",
+                        f"[智能记忆] 检测到复读。group={group_id}，text={current_text[:80]}，count={tracker['count']}",
                     )
                     repeat_text = current_text if current_text else tracker["last_text"]
                     await self._send_reply(
@@ -4416,7 +4452,7 @@ class AgenticMemoryPlugin(Star):
                     self.output_silenced_groups[group_id].add(self._SILENCE_REPEAT)
                     self._log(
                         "info",
-                        f"[agentic_memory] Repeat silence activated. group={group_id}",
+                        f"[智能记忆] 已启用复读静默。group={group_id}",
                     )
                     return
             else:
@@ -5166,5 +5202,5 @@ class AgenticMemoryPlugin(Star):
             except Exception as exc:
                 self._log(
                     "error",
-                    f"[agentic_memory] Daily compression failed: {exc}",
+                    f"[智能记忆] 每日记忆压缩失败：{exc}",
                 )

@@ -76,6 +76,7 @@ def _is_url_safe(url: str) -> bool:
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:
+        logger.debug(f"[新闻自拍] 解析私有 IP 地址失败：{hostname}")
         return True
     return not any(addr in net for net in _PRIVATE_IP_RANGES)
 
@@ -1323,7 +1324,8 @@ class NewsSelfiePipeline:
                 loaded = json.loads(self.cache_file.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     self.cache = loaded
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(f"[新闻自拍] 读取新闻缓存失败，已重置为空：{exc}")
                 self.cache = {}
 
     def _save_cache(self) -> None:
