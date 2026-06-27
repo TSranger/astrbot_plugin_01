@@ -86,11 +86,35 @@ class MemoryDBManager:
                 CREATE TABLE IF NOT EXISTS User_Profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
                     nickname TEXT NOT NULL,
                     fixed_data TEXT DEFAULT '{}',
                     dynamic_events TEXT DEFAULT '[]',
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(group_id, nickname)
+                )
+                """
+            )
+
+            existing_user_profile_columns = {
+                row[1]
+                for row in cursor.execute("PRAGMA table_info(User_Profiles)").fetchall()
+            }
+            if "user_id" not in existing_user_profile_columns:
+                cursor.execute(
+                    "ALTER TABLE User_Profiles ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"
+                )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS Nickname_History (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    nickname TEXT NOT NULL,
+                    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(group_id, user_id, nickname)
                 )
                 """
             )
@@ -554,8 +578,112 @@ class MemoryDBManager:
                 }
             return {"fixed_data": {}, "dynamic_events": []}
 
+    def get_user_profile_by_user_id(
+        self, group_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """用 user_id 查询用户画像。
+
+        Args:
+            group_id: 群号。
+            user_id: 用户 QQ 号。
+
+        Returns:
+            包含固定信息和动态记忆的画像字典。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT fixed_data, dynamic_events FROM User_Profiles WHERE group_id = ? AND user_id = ? AND user_id != '' ORDER BY last_updated DESC LIMIT 1",
+                (group_id, user_id),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "fixed_data": json.loads(row[0]),
+                    "dynamic_events": json.loads(row[1]),
+                }
+            return {"fixed_data": {}, "dynamic_events": []}
+
+    def record_nickname(self, group_id: str, user_id: str, nickname: str) -> None:
+        """记录一条昵称→user_id 映射。
+
+        Args:
+            group_id: 群号。
+            user_id: 用户 QQ 号。
+            nickname: 用户当前昵称。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO Nickname_History (group_id, user_id, nickname, last_seen)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(group_id, user_id, nickname) DO UPDATE SET
+                    last_seen = CURRENT_TIMESTAMP
+                """,
+                (group_id, user_id, nickname),
+            )
+            conn.commit()
+
+    def get_user_id_by_nickname(self, group_id: str, nickname: str) -> str | None:
+        """从旧昵称反查 user_id。
+
+        Args:
+            group_id: 群号。
+            nickname: 昵称。
+
+        Returns:
+            user_id 或 ``None``。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user_id FROM Nickname_History WHERE group_id = ? AND nickname = ? ORDER BY last_seen DESC LIMIT 1",
+                (group_id, nickname),
+            )
+            row = cursor.fetchone()
+            if row:
+                return str(row[0])
+
+            cursor.execute(
+                "SELECT user_id FROM User_Profiles WHERE group_id = ? AND nickname = ? AND user_id != '' LIMIT 1",
+                (group_id, nickname),
+            )
+            row = cursor.fetchone()
+            return str(row[0]) if row else None
+
+    def get_nickname_history(self, group_id: str, user_id: str) -> list[dict[str, str]]:
+        """查某用户的所有历史昵称。
+
+        Args:
+            group_id: 群号。
+            user_id: 用户 QQ 号。
+
+        Returns:
+            包含 nickname、first_seen、last_seen 的字典列表。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT nickname, first_seen, last_seen FROM Nickname_History WHERE group_id = ? AND user_id = ? ORDER BY last_seen DESC",
+                (group_id, user_id),
+            )
+            return [
+                {
+                    "nickname": str(row[0]),
+                    "first_seen": str(row[1] or ""),
+                    "last_seen": str(row[2] or ""),
+                }
+                for row in cursor.fetchall()
+            ]
+
     def upsert_user_profile(
-        self, group_id: str, nickname: str, fixed_data: dict, dynamic_events: list
+        self,
+        group_id: str,
+        nickname: str,
+        fixed_data: dict,
+        dynamic_events: list,
+        user_id: str = "",
     ) -> None:
         """插入或更新一条用户画像。
 
@@ -564,20 +692,23 @@ class MemoryDBManager:
             nickname: 用户昵称。
             fixed_data: 稳定画像字段。
             dynamic_events: 最近动态事件。
+            user_id: 用户的 QQ 号。
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO User_Profiles (group_id, nickname, fixed_data, dynamic_events, last_updated)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO User_Profiles (group_id, user_id, nickname, fixed_data, dynamic_events, last_updated)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(group_id, nickname) DO UPDATE SET
+                    user_id = COALESCE(NULLIF(excluded.user_id, ''), user_id),
                     fixed_data = excluded.fixed_data,
                     dynamic_events = excluded.dynamic_events,
                     last_updated = CURRENT_TIMESTAMP
                 """,
                 (
                     group_id,
+                    user_id,
                     nickname,
                     json.dumps(fixed_data, ensure_ascii=False),
                     json.dumps(dynamic_events, ensure_ascii=False),

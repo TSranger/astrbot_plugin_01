@@ -24,13 +24,6 @@
 #   - "whitelist_only" = 仅对白名单群生效
 #   - "all_groups"     = 对插件实际生效的所有群都可触发
 
-############################
-# 当前设计缺陷：
-# 1）内心想法（括号里的内容，比如“看看不说话”之类的）就不需要发出来了
-# 2）被提及或@后不会立刻回复，而是等新的一轮滑动窗口到位率才可能会回复（包括被引用消息）
-# 3）目前没有识别图片和表情包的功能。但还是把这俩算作了消息（我觉得算作消息没问题。但是得把图片和表情包的识别也做了）
-############################
-
 plugin_settings:
   # 是否启用整个插件。
   # 可选值：true / false
@@ -96,12 +89,18 @@ message_reaction_settings:
   immediate_summary_count: 5
 
   # 即时回复冷却时间（秒）。
-  # 排查时设为 0，确保每次直接触发都能立即进入回复流程。
-  immediate_cooldown_seconds: 0
+  # 仅对名字命中 / 引用 / followup 生效；@ 不受此冷却限制。
+  immediate_cooldown_seconds: 10
+
+  # @ 专属冷却时间（秒）。0 表示 @ 时立即回复不受冷却限制。
+  immediate_mention_cooldown_seconds: 0
+
+  # followup（有人接 bot 话）专用冷却时间（秒）。
+  followup_cooldown_seconds: 10
 
   # 主动插话冷却时间（秒）。
   # 排查时设为 0，避免后台主动回复被冷却拦掉。
-  proactive_cooldown_seconds: 0
+  proactive_cooldown_seconds: 10
 
   # 是否启用“短窗口反应”。
   # 含义：最近若干条消息里频繁提到机器人，就算没人直接 @，也可以顺势说一句。
@@ -111,7 +110,7 @@ message_reaction_settings:
   # 短窗口统计的消息条数。
   # 例如设为 8，表示检查最近 8 条消息里是否反复提到机器人。
   # 推荐范围：5~10
-  short_window_size: 5
+  short_window_size: 6
 
   # 最近 short_window_size 条消息中，至少出现多少次“名字命中”才触发短窗口接话。
   # 设高一点会更稳，减少“太爱刷存在感”。
@@ -129,14 +128,14 @@ message_reaction_settings:
 
   # 短窗口接话冷却时间（秒）。
   # 排查时设为 0，避免短窗口逻辑被冷却拦掉。
-  short_window_cooldown_seconds: 5
+  short_window_cooldown_seconds: 10
 
 memory_settings:
   # 长期记忆分析触发阈值。
   # 当缓存消息数达到这个值时，会触发一次“分析 / 总结 / 记忆更新 / 潜在插话点提炼”。
   # 注意：它现在不再控制“被 @ 后是否立即说话”。
   # 推荐范围：8~20
-  buffer_threshold: 10
+  buffer_threshold: 16
 
   # 每次长窗口处理后，保留多少条重叠消息进入下一轮。
   # 作用：避免上下文割裂。
@@ -168,11 +167,11 @@ probability_settings:
   # 只影响“长窗口分析后，机器人想不想主动接一句”。
   # 越低越像低存在感群友。
   # 推荐范围：0.03~0.15
-  base_interject_probability: 0.6
+  base_interject_probability: 0.3
 
   # 当当前话题和角色偏好更匹配时，主动插话概率提升到多少。
   # 推荐范围：0.15~0.40
-  boost_interject_probability: 0.9
+  boost_interject_probability: 0.6
 
 summary_settings:
   # 所有记忆归纳任务统一在每天这个时间点检查和执行。
@@ -702,3 +701,20 @@ image_settings:
 
   # 单条消息最多识别几张图片。
   max_images_per_message: 3
+
+repeat_silence:
+  # 是否启用复读检测与压制
+  enabled: true
+
+  # 连续几条相同消息判定为复读
+  min_count: 3
+
+  # 复读消息比对时忽略前后空白差异
+  strip_compare: true
+
+image_flood_silence:
+  # 是否启用图片刷屏静默
+  enabled: true
+
+  # 连续几条纯图片消息进入静默
+  threshold: 5
