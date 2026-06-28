@@ -470,11 +470,11 @@ news_selfie_settings:
   # 如果未配置任何任务，则回退使用 check_time 每天执行一次。
   tasks:
     - task_id: "morning_news"
-      enabled: true
+      enabled: false
       # 固定触发时间，格式 HH:MM。
       time: "08:00"
     - task_id: "afternoon_news"
-      enabled: true
+      enabled: false
       # 随机时间窗口。不写 time，而是写 time_range_start / time_range_end 时，
       # 会在该范围内为当天随机抽一个固定时刻执行。
       time_range_start: "14:00"
@@ -497,14 +497,16 @@ news_selfie_settings:
   news_language: "zh"
 
   # 每次最多拉取多少条头条。
-  max_headlines: 10
+  max_headlines: 0
 
   # 图片生成服务商：dalle / openai_images / tongyi。
   # 注意：mimo 不支持图片生成（mimo-v2-omni 是纯文本+视觉理解模型），请勿使用。
-  image_gen_provider: "tongyi"
+  # image_gen_provider: "tongyi"
+  image_gen_provider: "close"
 
   # 图片生成 API Key。
-  image_gen_api_key: "sk-ws-H.RYLDLLX.QInZ.MEUCIG_ntzUlJbdkDpELN2k51CPlHy-9UgIwT1iWJ8MovMAkAiEAh-paX7ccu4NYZyMhDqZHCcDRrV0ruWwCeG-ck4gZnqM"
+  # image_gen_api_key: "sk-ws-H.RYLDLLX.QInZ.MEUCIG_ntzUlJbdkDpELN2k51CPlHy-9UgIwT1iWJ8MovMAkAiEAh-paX7ccu4NYZyMhDqZHCcDRrV0ruWwCeG-ck4gZnqM"
+  image_gen_api_key: "close"
 
   # 图片生成 API 基础地址。
   # dalle/openai_images: https://api.openai.com（也支持国产兼容端点）
@@ -517,7 +519,7 @@ news_selfie_settings:
   image_gen_model: "wan2.7-image"
 
   # 每次管道最多发送几条自拍新闻（从大新闻中随机选取）。
-  max_selfies_per_run: 1
+  max_selfies_per_run: 0
 
   # 投递群列表。不填则使用 proactive_talk_settings.default_group_ids。
   group_ids:
