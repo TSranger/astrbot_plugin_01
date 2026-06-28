@@ -457,7 +457,7 @@ proactive_talk_settings:
 
 news_selfie_settings:
   # 是否启用新闻自拍功能。
-  enabled: true
+  enabled: false
 
   # HTTP(S) 代理地址，用于访问被墙的新闻源（如 Google News RSS）。
   # 格式示例：http://127.0.0.1:7890
