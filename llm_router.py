@@ -213,6 +213,10 @@ class PluginLLMRouter:
             payload,
             timeout_seconds,
         )
+        logger.debug(
+            f"[LLM 路由] 角色 {role} 视觉响应结构："
+            f"keys={list(response_data.keys())}"
+        )
         return self._extract_openai_text(response_data)
 
     def _post_json(
@@ -267,7 +271,9 @@ class PluginLLMRouter:
         message = choices[0].get("message", {})
         content = message.get("content", "")
         if isinstance(content, str):
-            return content.strip()
+            text = content.strip()
+            if text:
+                return text
 
         parts: list[str] = []
         if isinstance(content, list):
@@ -277,7 +283,15 @@ class PluginLLMRouter:
                 elif isinstance(item, str):
                     parts.append(item)
 
-        return "\n".join(part.strip() for part in parts if part.strip()).strip()
+        text = "\n".join(part.strip() for part in parts if part.strip()).strip()
+        if text:
+            return text
+
+        reasoning_content = message.get("reasoning_content", "")
+        if isinstance(reasoning_content, str):
+            return reasoning_content.strip()
+
+        return ""
 
     def _normalize_image_reference(self, value: str) -> str:
         """Normalize an image reference for OpenAI-compatible requests.

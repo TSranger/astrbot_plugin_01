@@ -1,81 +1,29 @@
-日志：【[17:29:07.993] [Core] [INFO] [services.plugin_service:956]: 更新插件 astrbot_plugin_01 成功。
-[17:29:35.291] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 暂无第一名字，堇风铃999，漫游时空（day186/819244724: [引用消息(中午吃肯德基: 可以当我妈妈吗)] [At:1186835907] [At:3535252055] 你怎么看？ 
-[17:29:35.298] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.reply', repr=Reply(type=<ComponentType.Reply: 'Reply'>, id='1950887021', chain=[At(type=<ComponentType.At: 'At'>, qq='3535252055', name='薇塔'), Plain(type=<ComponentType.Plain: 'Plain'>, text='可以当我妈妈吗')], sender_id
-[17:29:35.298] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.at', repr=At(type=<ComponentType.At: 'At'>, qq='1186835907', name='中午吃肯德基')
-[17:29:35.298] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.at', repr=At(type=<ComponentType.At: 'At'>, qq='3535252055', name='薇塔')
-[17:29:35.299] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='你怎么看？')
-[17:29:35.301] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, user_id=, mentioned=True, quoted=False, name_hit=False, question_hit=False, text=@中午吃
-肯德基(1186835907) 你怎么看？
-[17:29:35.301] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Immediate mention reply triggered in group 157903619.
-[17:29:35.301] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Reply focus resolved. group=157903619, channel=immediate, raw_topic='@中午吃肯德基(1186835907) 你怎么看？', effective_topic='@中午吃肯德基(1186835907) 你怎么看？', focus_note=The latest message already states the current topic clearly.
-[17:29:42.262] [Plug] [INFO] [astrbot_plugin_01.main:460]: [immediate] Sent reply in group 157903619: 哎呀，突然被点名了呢~ 不过天晓得你们在聊什么……你准备怎么看呢
-[17:29:42.263] [Core] [INFO] [respond.stage:183]: Prepare to send - 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 
-[17:29:48.812] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 暂无第一名字，堇风铃999，漫游时空（day186/819244724: ？ 
-[17:29:48.817] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='？')
-[17:29:48.817] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=？
-[17:29:53.127] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-2 LLM decision. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, llm_raw='yes', is_followup=True, text=？
-[17:29:53.127] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup detected. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, text=？
-[17:29:53.127] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Immediate followup reply triggered in group 157903619.
-[17:29:53.128] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Reply focus resolved. group=157903619, channel=immediate, raw_topic='？', effective_topic='@中午吃肯德基(1186835907) 你怎么看？（最新承接：？）', focus_note=The latest message is only a weak continuation. Use the anchor only to补全省略主语，不要把更早的旧话题重新捡回来。
-[17:29:59.212] [Plug] [INFO] [astrbot_plugin_01.main:460]: [immediate] Sent reply in group 157903619: 哎呀，你们在讨论什么呢~我好像错过了什么重要的剧情
-[17:29:59.213] [Core] [INFO] [respond.stage:183]: Prepare to send - 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 
-[17:30:02.973] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1352]: [news_selfie] Pipeline started
-[17:30:02.973] [Plug] [INFO] [astrbot_plugin_01.news_selfie:216]: [news_selfie] Fetching headlines from Google News RSS: https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans...
-[17:30:03.000] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1352]: [news_selfie] Pipeline started
-[17:30:03.000] [Plug] [INFO] [astrbot_plugin_01.news_selfie:216]: [news_selfie] Fetching headlines from Google News RSS: https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans...
-[17:30:05.341] [Plug] [INFO] [astrbot_plugin_01.news_selfie:276]: [news_selfie] Fetched 10 headlines from RSS
-[17:30:06.032] [Plug] [ERRO] [v4.26.0-beta.1] [astrbot_plugin_01.main:460]: [news_selfie] Pipeline failed: Cannot connect to host news.google.com:443 ssl:default [Connection reset by peer]
-[17:30:08.080] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] super样本/534287659: 此葵可卿之血，勿去 
-[17:30:08.084] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='此葵可卿之血，勿去')
-[17:30:08.084] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=super样本, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=此葵可卿之血，勿去
-[17:30:08.085] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=super样本, last_target=暂无第一名字，堇风铃999，漫游时空（day186, text=此葵可卿之血，勿去
-[17:30:15.734] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.news_selfie:439]: [news_selfie] No JSON found in evaluation: [
-  {
-    "title": "习近平总书记关心指导基层党建的故事 - 求是",
-    "is_big_news": false,
-    "reason": "以人物为中心的日常政治发言/故事",
-    "category": "politics"
-  },
-  {
-    "title": "伊朗强烈谴责美军空袭 称美方违反伊美谅解备忘录 - 每日经济新闻",
-    "is_big_news": true,
-    "reason": "伊朗与美军发生空袭冲突，地区紧张局势升级",
-    "category": "disaster"
-  },
-  {
-    "title"
-[17:30:21.328] [Plug] [INFO] [astrbot_plugin_01.news_selfie:479]: [news_selfie] Evaluation found 2 big news out of 5
-[17:30:21.328] [Plug] [INFO] [astrbot_plugin_01.news_selfie:364]: [news_selfie] Evaluation found 2 big news out of 10
-[17:30:21.328] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1378]: [news_selfie] Selected 1 news items out of 1
-[17:30:21.328] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1397]: [news_selfie] Processing news: 委内瑞拉官员：石油生产未受地震影响 - 中国日报网
-[17:30:24.065] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1417]: [news_selfie] Bot appearance: gif=True, images=1, name=薇塔 — 人物性格（5层结构）
-[17:30:28.749] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1459]: [news_selfie] Generated selfie text: 我刚从马拉开波那边绕过来，地震那会儿整条街都在晃，现在好些地方还封着路，能看见救援队在废墟里找人……听说失联人数涨得很快，这消息听着真让人心里发沉。
-[17:30:28.751] [Plug] [INFO] [astrbot_plugin_01.news_selfie:1389]: [news_selfie] Pipeline completed: 1 results generated
-[17:30:28.752] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:460]: [news_selfie] group_sessions is empty at startup; news selfie send will skip groups without cached sessions.
-[17:30:28.752] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:460]: [news_selfie] No cached session for group 966648392, skipping send.
-[17:30:28.752] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:460]: [news_selfie] No cached session for group 157903619, skipping send.】。请帮我看看这是啥情况？为啥更新后立刻又查询了一次新闻，且还没发送成功？请改为每天只根据配置的时间点发送，重启后不再发送；另外，根据日志：【O] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=【努力学习ing】扎伊切克, last_target=暂无第一名字，堇风铃999，漫游时空（day186, text=还有经典红魂
-[17:37:48.347] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 【努力学习ing】扎伊切克/1019155961: 我知道是哪了（ 
-[17:37:48.353] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='我知道是哪了（')
-[17:37:48.354] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=【努力学习ing】扎伊切克, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=我知道是哪了（
-[17:37:48.354] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=【努力学习ing】扎伊切克, last_target=暂无第一名字，堇风铃999，漫游时空（day186, text=我知道是哪了（
-[17:38:08.283] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 我不知道。这是2吧？1里我不记得有这地方 
-[17:38:08.289] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='我不知道。这是2吧？1里我不记得有这地方')
-[17:38:08.290] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=我不知
-  。这是2吧？1里我不记得有这地方
-[17:38:14.148] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 3的话应该是3个女的 
-[17:38:14.153] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='3的话应该是3个女的')
-[17:38:14.154] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=3的话应
-  是3个女的
-[17:38:14.321] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-2 LLM decision. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, llm_raw='yes', is_followup=True, text=我不知道。这是2吧？1里我不记得有这地方
-[17:38:14.322] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup detected. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, text=我不知道。这是2吧？1里我不记得有这地方
-[17:38:14.322] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Immediate followup reply triggered in group 157903619.
-[17:38:14.322] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Reply focus resolved. group=157903619, channel=immediate, raw_topic='我不知道。这是2吧？1里我不记得有这地方', effective_topic='3的话应该是3个女的', focus_note=The latest message already states the current topic clearly.
-[17:38:18.937] [Plug] [INFO] [astrbot_plugin_01.main:460]: [immediate] Sent reply in group 157903619: 哎呀~三个女孩？那倒是会很热闹呢，我倒要看看是什么组合能入得了眼呢
-[17:38:18.938] [Core] [INFO] [respond.stage:183]: Prepare to send - 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 
-[17:38:25.132] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-2 LLM decision. group=157903619, sender=暂无第一名字，堇风铃999，漫游时空（day186, llm_raw='no', is_followup=False, text=3的话应该是3个女的
-[17:38:28.314] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 【努力学习ing】扎伊切克/1019155961: 海盗船个 
-[17:38:28.320] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='海盗船个')
-[17:38:28.321] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Received group message. group=157903619, sender=【努力学习ing】扎伊切克, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=海盗船个
-[17:38:28.322] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory] Followup stage-1 mismatch. group=157903619, sender=【努力学习ing】扎伊切克, last_target=暂无第一名字，堇风铃999，漫游时空（day186, text=海盗船个
-[17:38:35.751] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 暂无第一名字，堇风铃999，漫游时空（day186/819244724: 艹 
-[17:38:35.757] [Plug] [INFO] [astrbot_plugin_01.main:460]: [agentic_memory][media] segment type='componenttype.plain', repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='艹')】，似乎看不出来bot中途为什么突然插话了？我记得之前不是应该有让bot的日志更全面、让bot的每一次说话都有迹可循吗？这里完全看不出来bot为什么突然说话且为什么说的是这些。之前我的安排是让bot总结群里的聊天内容，且让llm对内容主题输出一个置信度，若llm对主题越熟悉越有把我，置信度就越高，那么触发发言的概率就越高；反之就越低。但从日志中似乎看不出来bot为什么突然发言了以及置信度是多少怎么触发的。请帮我优化日志，让其能输出llm对聊天内容的把握的置信度及当前触发的分数等（当然还有当前已经总结好的主题内容）
+1）图片识别失败：
+[23:16:06.798] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 已下载图片内容：status=200，content_type=image/jpeg，大小=270338 字节，url=https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhTZowB-syTHoowaDR-az3wM0ksJ-RiCwBAg_woorIWGoNunlQMyBHByb2RQg
+[23:16:06.917] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 视觉请求诊断：mode=plugin_router，fallback_to_default=True，enabled=True，provider_type=openai_compatible，model=mimo-v2-omni，base_url=https://token-plan-cn.xiaomimimo.com/v1，尝试=1/2，输入类型=data_uri，图片大小=163611
+[23:16:06.917] [Plug] [INFO] [astrbot_plugin_01.llm_router:188]: [LLM 路由] 角色 vision 正在发送视觉请求：mode=plugin_router，provider_type=openai_compatible，model=mimo-v2-omni，image_count=1，images_are_data_uri=True，first_image_prefix=data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgI
+[23:16:11.529] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 图片 [1/1] 视觉模型返回空结果，耗时 5.2 秒，尝试=1/2，输入类型=data_uri。
+[23:16:11.530] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 视觉请求诊断：mode=plugin_router，fallback_to_default=True，enabled=True，provider_type=openai_compatible，model=mimo-v2-omni，base_url=https://token-plan-cn.xiaomimimo.com/v1，尝试=2/2，输入类型=原始地址，图片大小=237
+[23:16:11.530] [Plug] [INFO] [astrbot_plugin_01.llm_router:188]: [LLM 路由] 角色 vision 正在发送视觉请求：mode=plugin_router，provider_type=openai_compatible，model=mimo-v2-omni，image_count=1，images_are_data_uri=False，first_image_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhTZowB-syTHoowaDR-az3wM0ksJ-RiCwBAg_woorIWGoNunlQMyBHByb2RQg
+[23:16:16.277] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 图片 [1/1] 视觉模型返回空结果，耗时 9.9 秒，尝试=2/2，输入类型=原始地址。
+[23:16:16.278] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 图片识别没有返回描述，共 1 张，群号=157903619。
+[23:16:16.278] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 收到群消息。 group=157903619, sender=八奈见米拉, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=
+[23:16:53.561] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 八奈见米拉/3499079014: [图片] 这个是挂机小游戏还是能冲刺的？ 
+[23:16:55.183] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆][媒体] 片段类型='componenttype.image'，repr=Image(type=<ComponentType.Image: 'Image'>, file='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3...<99 chars>', url='/home/all_data/yladmin/ydong/llm/AstrBot/data/temp/media_image_3..
+[23:16:55.184] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆][媒体] 片段类型='componenttype.plain'，repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='这个是挂机小游戏还是能冲刺的？')
+[23:16:55.184] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 已从消息中提取 1 个图片地址，群号=157903619。 vision_enabled=True, original_text_empty=False
+[23:16:55.184] [Plug] [INFO] [astrbot_plugin_01.main:461]: [agentic_memory] 图片识别开始：共发现 1 张图片，本次最多处理 1 张。
+[23:16:55.184] [Plug] [INFO] [astrbot_plugin_01.main:461]: [agentic_memory] 图片 [1/1] 开始处理，链接前缀=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhSTwu2qZduz6tAwq
+[23:16:56.492] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 已下载图片内容：status=200，content_type=image/png，大小=7876168 字节，url=https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhSTwu2qZduz6tAwqADdgtD3ctiCkxjI3OADIP8KKPj5hrfbp5UDMgRwcm9kU
+[23:16:56.542] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:461]: [智能记忆] 图片转 JPEG 压缩失败，已保留原始数据：image file is truncated
+[23:16:56.564] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 视觉请求诊断：mode=plugin_router，fallback_to_default=True，enabled=True，provider_type=openai_compatible，model=mimo-v2-omni，base_url=https://token-plan-cn.xiaomimimo.com/v1，尝试=1/2，输入类型=data_uri，图片大小=6990531
+[23:16:56.564] [Plug] [INFO] [astrbot_plugin_01.llm_router:188]: [LLM 路由] 角色 vision 正在发送视觉请求：mode=plugin_router，provider_type=openai_compatible，model=mimo-v2-omni，image_count=1，images_are_data_uri=True，first_image_prefix=data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAACgAAAAWgCAIAAAAdYo2IAAAgAElEQVR4Aezcd4yjaWLfef+xs7uydmXZsnw6nXSwz7tnQDhbg
+[23:16:58.789] [Plug] [ERRO] [v4.26.0-beta.1] [astrbot_plugin_01.llm_router:85]: [LLM 路由] 角色 vision 的插件路由调用失败：HTTP 400: {"error":{"code":"400","message":"Multimodal data is corrupted or cannot be processed.","param":"","type":"BadRequestError"}}
+[23:16:58.789] [Plug] [WARN] [v4.26.0-beta.1] [astrbot_plugin_01.main:461]: [智能记忆] 图片 [1/1] 视觉模型调用失败，耗时 3.6 秒，尝试=1/2，输入类型=data_uri，错误：HTTP 400: {"error":{"code":"400","message":"Multimodal data is corrupted or cannot be processed.","param":"","type":"BadRequestError"}}
+[23:16:58.789] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 视觉请求诊断：mode=plugin_router，fallback_to_default=True，enabled=True，provider_type=openai_compatible，model=mimo-v2-omni，base_url=https://token-plan-cn.xiaomimimo.com/v1，尝试=2/2，输入类型=原始地址，图片大小=238
+[23:16:58.790] [Plug] [INFO] [astrbot_plugin_01.llm_router:188]: [LLM 路由] 角色 vision 正在发送视觉请求：mode=plugin_router，provider_type=openai_compatible，model=mimo-v2-omni，image_count=1，images_are_data_uri=False，first_image_prefix=https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhSTwu2qZduz6tAwqADdgtD3ctiCkxjI3OADIP8KKPj5hrfbp5UDMgRwcm9kU
+[23:17:01.875] [Core] [INFO] [core.event_bus:74]: [default] [OneBot01(aiocqhttp)] 乌乌翎⁵⁵⁰/1468111929: 能ddl 
+[23:17:01.879] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆][媒体] 片段类型='componenttype.plain'，repr=Plain(type=<ComponentType.Plain: 'Plain'>, text='能ddl')
+[23:17:01.880] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 收到群消息。 group=157903619, sender=乌乌翎⁵⁵⁰, user_id=, mentioned=False, quoted=False, name_hit=False, question_hit=False, text=能ddl
+[23:17:05.292] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 图片 [1/1] 视觉模型返回空结果，耗时 10.1 秒，尝试=2/2，输入类型=原始地址。
+[23:17:05.292] [Plug] [INFO] [astrbot_plugin_01.main:461]: [智能记忆] 图片识别没有返回描述，共 1 张，群号=157903619。

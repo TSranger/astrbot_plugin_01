@@ -522,7 +522,7 @@ news_selfie_settings:
   # 投递群列表。不填则使用 proactive_talk_settings.default_group_ids。
   group_ids:
     - "966648392"
-    - "157903619"
+    # - "157903619"
 
 logging_settings:
   # 是否把插件关键日志额外写入插件自己的日志文件。
